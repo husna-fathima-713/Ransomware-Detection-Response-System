@@ -1,0 +1,34 @@
+monitoring:
+  watch_paths:
+    - data/sandbox
+
+  scan_interval_seconds: 5
+  sliding_window_seconds: 60
+
+detection:
+  thresholds:
+    files_modified_per_minute: 20
+    rename_count: 10
+    extension_change_count: 5
+    average_entropy: 7.2
+
+scoring:
+  weights:
+    rapid_encryption: 40
+    mass_rename: 30
+    high_entropy: 25
+    cpu_spike: 15
+    unknown_program: 10
+
+  levels:
+    normal: 40
+    warning: 70
+    critical: 100
+
+response:
+  simulation_mode: true
+  quarantine_path: data/quarantine
+
+logging:
+  directory: logs
+  level: INFO
