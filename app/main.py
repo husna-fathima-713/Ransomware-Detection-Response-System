@@ -16,10 +16,15 @@ def main() -> None:
     print("Status: monitoring")
 
     watch_path = config["monitoring"]["watch_paths"][0]
+    window_seconds = config["monitoring"]["sliding_window_seconds"]
 
     print(f"Watching: {watch_path}")
+    print(f"Sliding window: {window_seconds} seconds")
 
-    observer = start_monitor(watch_path)
+    observer = start_monitor(
+        watch_path,
+        window_seconds,
+    )
 
     try:
         while True:

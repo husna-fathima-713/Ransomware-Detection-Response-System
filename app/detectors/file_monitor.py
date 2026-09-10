@@ -2,25 +2,30 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.detectors.event import FileEvent
+from app.detectors.event_history import EventHistory
 
 
 class RDRSEventHandler(FileSystemEventHandler):
     """Handle file-system events for RDRS."""
 
-    def __init__(self) -> None:
+    def __init__(self, window_seconds: int = 60) -> None:
         super().__init__()
         self.event_count = 0
+        self.history = EventHistory(window_seconds)
 
     def _handle_event(self, event_type: str, path: str) -> None:
         event = FileEvent.create(event_type, path)
+
         self.event_count += 1
+        self.history.add(event)
 
         print(
             f"[EVENT] {event.event_type.upper()} | "
             f"{event.timestamp.isoformat()} | "
             f"{event.path} | "
             f"{event.extension or '[no extension]'} | "
-            f"COUNT={self.event_count}"
+            f"COUNT={self.event_count} | "
+            f"WINDOW={self.history.count()}"
         )
 
     def on_created(self, event) -> None:
@@ -40,10 +45,10 @@ class RDRSEventHandler(FileSystemEventHandler):
             self._handle_event("rename", event.dest_path)
 
 
-def start_monitor(watch_path: str) -> Observer:
+def start_monitor(watch_path: str, window_seconds: int = 60) -> Observer:
     """Start monitoring a directory."""
     observer = Observer()
-    handler = RDRSEventHandler()
+    handler = RDRSEventHandler(window_seconds)
 
     observer.schedule(
         handler,
