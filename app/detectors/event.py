@@ -9,9 +9,15 @@ class FileEvent:
     path: str
     timestamp: datetime
     extension: str
+    old_extension: str = ""
 
     @classmethod
-    def create(cls, event_type: str, path: str) -> "FileEvent":
+    def create(
+        cls,
+        event_type: str,
+        path: str,
+        old_extension: str = "",
+    ) -> "FileEvent":
         file_path = Path(path)
 
         return cls(
@@ -19,4 +25,5 @@ class FileEvent:
             path=str(file_path),
             timestamp=datetime.now(),
             extension=file_path.suffix.lower(),
+            old_extension=old_extension.lower(),
         )
