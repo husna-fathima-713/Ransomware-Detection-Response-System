@@ -3,6 +3,7 @@ from watchdog.observers import Observer
 
 from app.detectors.event import FileEvent
 from app.detectors.event_history import EventHistory
+from app.detectors.event_stats import EventStats
 
 
 class RDRSEventHandler(FileSystemEventHandler):
@@ -12,6 +13,7 @@ class RDRSEventHandler(FileSystemEventHandler):
         super().__init__()
         self.event_count = 0
         self.history = EventHistory(window_seconds)
+        self.stats = EventStats(self.history)
 
     def _handle_event(self, event_type: str, path: str) -> None:
         event = FileEvent.create(event_type, path)
@@ -19,13 +21,21 @@ class RDRSEventHandler(FileSystemEventHandler):
         self.event_count += 1
         self.history.add(event)
 
+        statistics = self.stats.calculate()
+
         print(
             f"[EVENT] {event.event_type.upper()} | "
             f"{event.timestamp.isoformat()} | "
             f"{event.path} | "
-            f"{event.extension or '[no extension]'} | "
-            f"COUNT={self.event_count} | "
-            f"WINDOW={self.history.count()}"
+            f"{event.extension or '[no extension]'}"
+        )
+
+        print(
+            f"[STATS] total={statistics['total_events']} | "
+            f"created={statistics['created']} | "
+            f"modified={statistics['modified']} | "
+            f"deleted={statistics['deleted']} | "
+            f"renamed={statistics['renamed']}"
         )
 
     def on_created(self, event) -> None:
