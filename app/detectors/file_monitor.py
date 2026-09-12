@@ -15,8 +15,17 @@ class RDRSEventHandler(FileSystemEventHandler):
         self.history = EventHistory(window_seconds)
         self.stats = EventStats(self.history)
 
-    def _handle_event(self, event_type: str, path: str) -> None:
-        event = FileEvent.create(event_type, path)
+    def _handle_event(
+        self,
+        event_type: str,
+        path: str,
+        old_extension: str = "",
+    ) -> None:
+        event = FileEvent.create(
+            event_type,
+            path,
+            old_extension,
+        )
 
         self.event_count += 1
         self.history.add(event)
@@ -35,7 +44,9 @@ class RDRSEventHandler(FileSystemEventHandler):
             f"created={statistics['created']} | "
             f"modified={statistics['modified']} | "
             f"deleted={statistics['deleted']} | "
-            f"renamed={statistics['renamed']}"
+            f"renamed={statistics['renamed']} | "
+            f"extension_changes="
+            f"{statistics['extension_changes']}"
         )
 
     def on_created(self, event) -> None:
@@ -52,10 +63,23 @@ class RDRSEventHandler(FileSystemEventHandler):
 
     def on_moved(self, event) -> None:
         if not event.is_directory:
-            self._handle_event("rename", event.dest_path)
+            old_extension = (
+                "." + event.src_path.rsplit(".", 1)[-1]
+                if "." in event.src_path.split("/")[-1]
+                else ""
+            )
+
+            self._handle_event(
+                "rename",
+                event.dest_path,
+                old_extension,
+            )
 
 
-def start_monitor(watch_path: str, window_seconds: int = 60) -> Observer:
+def start_monitor(
+    watch_path: str,
+    window_seconds: int = 60,
+) -> Observer:
     """Start monitoring a directory."""
     observer = Observer()
     handler = RDRSEventHandler(window_seconds)
