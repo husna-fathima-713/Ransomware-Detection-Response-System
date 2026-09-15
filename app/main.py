@@ -1,8 +1,11 @@
+import time
+
 from loguru import logger
 
 from app.core.config import load_config
 from app.core.logging_config import setup_logging
 from app.detectors.file_monitor import start_monitor
+from app.detectors.process_stats import get_process_stats
 
 
 def main() -> None:
@@ -28,7 +31,17 @@ def main() -> None:
 
     try:
         while True:
-            pass
+            process_stats = get_process_stats()
+
+            print(
+                f"[PROCESS] total={process_stats['total_processes']} | "
+                f"high_cpu={process_stats['high_cpu_count']} | "
+                f"highest_cpu="
+                f"{process_stats['highest_cpu_percent']:.1f}%"
+            )
+
+            time.sleep(5)
+
     except KeyboardInterrupt:
         print("\nStopping RDRS monitor...")
         observer.stop()
