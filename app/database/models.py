@@ -37,3 +37,14 @@ class Alert(Base):
     level: Mapped[str] = mapped_column(String(50))
     rule: Mapped[str] = mapped_column(String(255))
     timestamp: Mapped[datetime] = mapped_column(DateTime)
+
+
+class Incident(Base):
+    __tablename__ = "incidents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    score: Mapped[int] = mapped_column(Integer)
+    level: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(50), default="open")
+    affected_files: Mapped[str] = mapped_column(String(2000), default="")
+    timestamp: Mapped[datetime] = mapped_column(DateTime)

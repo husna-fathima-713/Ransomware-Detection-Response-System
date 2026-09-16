@@ -1,7 +1,12 @@
 from datetime import datetime
 
 from app.database.database import get_session
-from app.database.models import FileEventRecord, ProcessRecord
+from app.database.models import (
+    Alert,
+    FileEventRecord,
+    Incident,
+    ProcessRecord,
+)
 
 
 def save_file_event(
@@ -43,6 +48,53 @@ def save_process_snapshot(
             username=process["username"],
             cpu_percent=process["cpu_percent"] or 0.0,
             memory_percent=process["memory_percent"] or 0.0,
+            timestamp=timestamp or datetime.now(),
+        )
+
+        session.add(record)
+        session.commit()
+    finally:
+        session.close()
+
+
+def save_alert(
+    score: int,
+    level: str,
+    rule: str,
+    timestamp: datetime | None = None,
+) -> None:
+    """Save a threat alert to SQLite."""
+    session = get_session()
+
+    try:
+        record = Alert(
+            score=score,
+            level=level,
+            rule=rule,
+            timestamp=timestamp or datetime.now(),
+        )
+
+        session.add(record)
+        session.commit()
+    finally:
+        session.close()
+
+
+def save_incident(
+    score: int,
+    level: str,
+    affected_files: list[str],
+    timestamp: datetime | None = None,
+) -> None:
+    """Save a security incident to SQLite."""
+    session = get_session()
+
+    try:
+        record = Incident(
+            score=score,
+            level=level,
+            status="open",
+            affected_files="\n".join(affected_files),
             timestamp=timestamp or datetime.now(),
         )
 
