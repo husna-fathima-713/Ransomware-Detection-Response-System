@@ -4,16 +4,34 @@ from watchdog.observers import Observer
 from app.detectors.event import FileEvent
 from app.detectors.event_history import EventHistory
 from app.detectors.event_stats import EventStats
+from app.detectors.threat_detector import ThreatDetector
 
 
 class RDRSEventHandler(FileSystemEventHandler):
-    """Handle file-system events for RDRS."""
+    """Handle file-system events and detect suspicious activity."""
 
-    def __init__(self, window_seconds: int = 60) -> None:
+    def __init__(
+        self,
+        window_seconds: int = 60,
+        thresholds: dict | None = None,
+    ) -> None:
         super().__init__()
+
         self.event_count = 0
         self.history = EventHistory(window_seconds)
         self.stats = EventStats(self.history)
+
+        self.thresholds = thresholds or {
+            "files_modified_per_minute": 20,
+            "rename_count": 10,
+            "extension_change_count": 5,
+            "average_entropy": 7.2,
+        }
+
+        self.detector = ThreatDetector(
+            self.stats,
+            self.thresholds,
+        )
 
     def _handle_event(
         self,
@@ -31,6 +49,7 @@ class RDRSEventHandler(FileSystemEventHandler):
         self.history.add(event)
 
         statistics = self.stats.calculate()
+        detection = self.detector.detect()
 
         print(
             f"[EVENT] {event.event_type.upper()} | "
@@ -49,6 +68,12 @@ class RDRSEventHandler(FileSystemEventHandler):
             f"{statistics['extension_changes']}"
         )
 
+        if detection["detected"]:
+            print(
+                f"[THREAT] DETECTED | "
+                f"rules={detection['triggered_rules']}"
+            )
+
     def on_created(self, event) -> None:
         if not event.is_directory:
             self._handle_event("create", event.src_path)
@@ -63,11 +88,10 @@ class RDRSEventHandler(FileSystemEventHandler):
 
     def on_moved(self, event) -> None:
         if not event.is_directory:
-            old_extension = (
-                "." + event.src_path.rsplit(".", 1)[-1]
-                if "." in event.src_path.split("/")[-1]
-                else ""
-            )
+            old_extension = ""
+
+            if "." in event.src_path.split("/")[-1]:
+                old_extension = "." + event.src_path.rsplit(".", 1)[-1]
 
             self._handle_event(
                 "rename",
@@ -79,10 +103,15 @@ class RDRSEventHandler(FileSystemEventHandler):
 def start_monitor(
     watch_path: str,
     window_seconds: int = 60,
+    thresholds: dict | None = None,
 ) -> Observer:
     """Start monitoring a directory."""
     observer = Observer()
-    handler = RDRSEventHandler(window_seconds)
+
+    handler = RDRSEventHandler(
+        window_seconds,
+        thresholds,
+    )
 
     observer.schedule(
         handler,

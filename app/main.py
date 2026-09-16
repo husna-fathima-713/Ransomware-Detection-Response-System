@@ -20,6 +20,7 @@ def main() -> None:
 
     watch_path = config["monitoring"]["watch_paths"][0]
     window_seconds = config["monitoring"]["sliding_window_seconds"]
+    thresholds = config["detection"]["thresholds"]
 
     print(f"Watching: {watch_path}")
     print(f"Sliding window: {window_seconds} seconds")
@@ -27,6 +28,7 @@ def main() -> None:
     observer = start_monitor(
         watch_path,
         window_seconds,
+        thresholds,
     )
 
     try:
