@@ -1,6 +1,8 @@
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from app.database.database import create_database
+from app.database.repository import save_file_event
 from app.detectors.event import FileEvent
 from app.detectors.event_history import EventHistory
 from app.detectors.event_stats import EventStats
@@ -47,6 +49,14 @@ class RDRSEventHandler(FileSystemEventHandler):
 
         self.event_count += 1
         self.history.add(event)
+
+        save_file_event(
+            event_type=event.event_type,
+            path=event.path,
+            extension=event.extension,
+            old_extension=event.old_extension,
+            timestamp=event.timestamp,
+        )
 
         statistics = self.stats.calculate()
         detection = self.detector.detect()
@@ -106,6 +116,8 @@ def start_monitor(
     thresholds: dict | None = None,
 ) -> Observer:
     """Start monitoring a directory."""
+    create_database()
+
     observer = Observer()
 
     handler = RDRSEventHandler(
