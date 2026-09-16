@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.database.database import get_session
-from app.database.models import FileEventRecord
+from app.database.models import FileEventRecord, ProcessRecord
 
 
 def save_file_event(
@@ -20,6 +20,29 @@ def save_file_event(
             path=path,
             extension=extension,
             old_extension=old_extension,
+            timestamp=timestamp or datetime.now(),
+        )
+
+        session.add(record)
+        session.commit()
+    finally:
+        session.close()
+
+
+def save_process_snapshot(
+    process: dict,
+    timestamp: datetime | None = None,
+) -> None:
+    """Save a process snapshot to SQLite."""
+    session = get_session()
+
+    try:
+        record = ProcessRecord(
+            pid=process["pid"],
+            name=process["name"] or "",
+            username=process["username"],
+            cpu_percent=process["cpu_percent"] or 0.0,
+            memory_percent=process["memory_percent"] or 0.0,
             timestamp=timestamp or datetime.now(),
         )
 
