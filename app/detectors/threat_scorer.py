@@ -1,33 +1,30 @@
 class ThreatScorer:
-    """Calculate a 0-100 threat score from triggered detection rules."""
+    """Calculate a 0-100 threat score from detection signals."""
 
-    def __init__(self, weights: dict) -> None:
+    def __init__(self, weights: dict, levels: dict | None = None) -> None:
         self.weights = weights
-
-    def calculate_score(self, triggered_rules: list[str]) -> int:
-        """Calculate the weighted threat score."""
-        score = 0
-
-        rule_mapping = {
-            "rapid_file_modification": "rapid_encryption",
-            "mass_rename": "mass_rename",
-            "extension_changes": "rapid_encryption",
+        self.levels = levels or {
+            "normal": 40,
+            "warning": 70,
+            "critical": 100,
         }
 
-        for rule in triggered_rules:
-            weight_name = rule_mapping.get(rule)
+    def calculate_score(self, signals: dict) -> int:
+        """Calculate a weighted threat score."""
+        score = 0
 
-            if weight_name:
-                score += self.weights.get(weight_name, 0)
+        for signal, active in signals.items():
+            if active:
+                score += self.weights.get(signal, 0)
 
         return min(score, 100)
 
     def get_level(self, score: int) -> str:
-        """Convert a threat score into a severity level."""
-        if score >= self.weights.get("critical", 100):
+        """Convert a score into a severity level."""
+        if score >= self.levels["critical"]:
             return "critical"
 
-        if score >= self.weights.get("warning", 70):
+        if score >= self.levels["warning"]:
             return "warning"
 
         return "normal"
