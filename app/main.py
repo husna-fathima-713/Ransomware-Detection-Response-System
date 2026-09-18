@@ -20,8 +20,9 @@ app = FastAPI(
 app.include_router(router)
 
 
-def start_rdrs() -> None:
-    """Initialize the RDRS monitoring system."""
+@app.on_event("startup")
+def startup() -> None:
+    """Initialize the RDRS application."""
     config = load_config()
 
     setup_logging(config["logging"]["directory"])
@@ -41,17 +42,11 @@ def start_rdrs() -> None:
 
     logger.info("Filesystem monitoring started")
 
-    while True:
-        process_stats = get_process_stats()
 
-        logger.info(
-            "Process statistics: total=%s high_cpu=%s highest_cpu=%.1f%%",
-            process_stats["total_processes"],
-            process_stats["high_cpu_count"],
-            process_stats["highest_cpu_percent"],
-        )
-
-        time.sleep(5)
+@app.on_event("shutdown")
+def shutdown() -> None:
+    """Log application shutdown."""
+    logger.info("RDRS application stopped")
 
 
 if __name__ == "__main__":

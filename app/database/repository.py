@@ -129,3 +129,29 @@ def get_recent_events(limit: int = 50) -> list[dict]:
         ]
     finally:
         session.close()
+
+
+def get_recent_alerts(limit: int = 50) -> list[dict]:
+    """Return the most recent threat alerts."""
+    session = get_session()
+
+    try:
+        records = (
+            session.query(Alert)
+            .order_by(Alert.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "id": record.id,
+                "score": record.score,
+                "level": record.level,
+                "rule": record.rule,
+                "timestamp": record.timestamp.isoformat(),
+            }
+            for record in records
+        ]
+    finally:
+        session.close()
