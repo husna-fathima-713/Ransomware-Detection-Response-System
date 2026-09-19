@@ -1,4 +1,4 @@
-import time
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
@@ -9,20 +9,11 @@ from app.core.config import load_config
 from app.core.logging_config import setup_logging
 from app.database.database import create_database
 from app.detectors.file_monitor import start_monitor
-from app.detectors.process_stats import get_process_stats
 
 
-app = FastAPI(
-    title="Ransomware Detection and Response System",
-    version="1.0.0",
-)
-
-app.include_router(router)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    """Initialize the RDRS application."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize and shut down the RDRS application."""
     config = load_config()
 
     setup_logging(config["logging"]["directory"])
@@ -34,7 +25,7 @@ def startup() -> None:
     window_seconds = config["monitoring"]["sliding_window_seconds"]
     thresholds = config["detection"]["thresholds"]
 
-    start_monitor(
+    observer = start_monitor(
         watch_path,
         window_seconds,
         thresholds,
@@ -42,11 +33,21 @@ def startup() -> None:
 
     logger.info("Filesystem monitoring started")
 
+    yield
 
-@app.on_event("shutdown")
-def shutdown() -> None:
-    """Log application shutdown."""
+    observer.stop()
+    observer.join()
+
     logger.info("RDRS application stopped")
+
+
+app = FastAPI(
+    title="Ransomware Detection and Response System",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+app.include_router(router)
 
 
 if __name__ == "__main__":
