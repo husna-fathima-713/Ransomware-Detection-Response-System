@@ -155,3 +155,31 @@ def get_recent_alerts(limit: int = 50) -> list[dict]:
         ]
     finally:
         session.close()
+
+
+def get_recent_processes(limit: int = 50) -> list[dict]:
+    """Return the most recent process snapshots."""
+    session = get_session()
+
+    try:
+        records = (
+            session.query(ProcessRecord)
+            .order_by(ProcessRecord.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "id": record.id,
+                "pid": record.pid,
+                "name": record.name,
+                "username": record.username,
+                "cpu_percent": record.cpu_percent,
+                "memory_percent": record.memory_percent,
+                "timestamp": record.timestamp.isoformat(),
+            }
+            for record in records
+        ]
+    finally:
+        session.close()

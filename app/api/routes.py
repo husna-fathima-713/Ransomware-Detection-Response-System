@@ -5,6 +5,7 @@ from app.database.models import Alert, FileEventRecord
 from app.database.repository import (
     get_recent_alerts,
     get_recent_events,
+    get_recent_processes,
 )
 
 router = APIRouter()
@@ -47,3 +48,9 @@ def events(limit: int = 50) -> list[dict]:
 def alerts(limit: int = 50) -> list[dict]:
     """Return recent threat alerts."""
     return get_recent_alerts(limit)
+
+
+@router.get("/processes")
+def processes(limit: int = 50) -> list[dict]:
+    """Return recent process snapshots."""
+    return get_recent_processes(limit)
