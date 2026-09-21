@@ -18,23 +18,41 @@ class ThreatDetector:
 
         triggered_rules = []
 
-        if (
+        rapid_encryption = (
             statistics["modified"]
             >= self.thresholds["files_modified_per_minute"]
-        ):
-            triggered_rules.append("rapid_file_modification")
+        )
 
-        if statistics["renamed"] >= self.thresholds["rename_count"]:
-            triggered_rules.append("mass_rename")
+        mass_rename = (
+            statistics["renamed"]
+            >= self.thresholds["rename_count"]
+        )
 
-        if (
+        extension_changes = (
             statistics["extension_changes"]
             >= self.thresholds["extension_change_count"]
-        ):
+        )
+
+        if rapid_encryption:
+            triggered_rules.append("rapid_file_modification")
+
+        if mass_rename:
+            triggered_rules.append("mass_rename")
+
+        if extension_changes:
             triggered_rules.append("extension_changes")
+
+        signals = {
+            "rapid_encryption": rapid_encryption,
+            "mass_rename": mass_rename,
+            "high_entropy": False,
+            "cpu_spike": False,
+            "unknown_program": False,
+        }
 
         return {
             "detected": bool(triggered_rules),
             "triggered_rules": triggered_rules,
+            "signals": signals,
             "statistics": statistics,
         }
