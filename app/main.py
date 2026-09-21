@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -9,6 +10,7 @@ from app.core.config import load_config
 from app.core.logging_config import setup_logging
 from app.database.database import create_database
 from app.detectors.file_monitor import start_monitor
+from app.detectors.process_service import process_monitor_loop
 
 
 @asynccontextmanager
@@ -24,6 +26,7 @@ async def lifespan(app: FastAPI):
     watch_path = config["monitoring"]["watch_paths"][0]
     window_seconds = config["monitoring"]["sliding_window_seconds"]
     thresholds = config["detection"]["thresholds"]
+    scan_interval = config["monitoring"]["scan_interval_seconds"]
 
     observer = start_monitor(
         watch_path,
@@ -33,12 +36,24 @@ async def lifespan(app: FastAPI):
 
     logger.info("Filesystem monitoring started")
 
-    yield
+    process_task = asyncio.create_task(
+        process_monitor_loop(scan_interval)
+    )
 
-    observer.stop()
-    observer.join()
+    try:
+        yield
+    finally:
+        process_task.cancel()
 
-    logger.info("RDRS application stopped")
+        try:
+            await process_task
+        except asyncio.CancelledError:
+            pass
+
+        observer.stop()
+        observer.join()
+
+        logger.info("RDRS application stopped")
 
 
 app = FastAPI(
