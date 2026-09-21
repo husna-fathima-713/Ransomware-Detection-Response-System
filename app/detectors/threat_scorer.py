@@ -1,7 +1,11 @@
 class ThreatScorer:
     """Calculate a 0-100 threat score from detection signals."""
 
-    def __init__(self, weights: dict, levels: dict | None = None) -> None:
+    def __init__(
+        self,
+        weights: dict,
+        levels: dict | None = None,
+    ) -> None:
         self.weights = weights
         self.levels = levels or {
             "normal": 40,
@@ -28,3 +32,16 @@ class ThreatScorer:
             return "warning"
 
         return "normal"
+
+    def score_detection(self, detection: dict) -> dict:
+        """Calculate score and severity from a detection result."""
+        signals = detection.get("signals", {})
+
+        score = self.calculate_score(signals)
+        level = self.get_level(score)
+
+        return {
+            **detection,
+            "score": score,
+            "level": level,
+        }
