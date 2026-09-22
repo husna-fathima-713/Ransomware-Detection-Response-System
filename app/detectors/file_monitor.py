@@ -33,6 +33,7 @@ class RDRSEventHandler(FileSystemEventHandler):
             "rename_count": 10,
             "extension_change_count": 5,
             "average_entropy": 7.2,
+            "cpu_spike_percent": 80.0,
         }
 
         self.detector = ThreatDetector(
@@ -118,10 +119,23 @@ class RDRSEventHandler(FileSystemEventHandler):
             f"{statistics['extension_changes']}"
         )
 
+        process_statistics = detection[
+            "process_statistics"
+        ]
+
+        print(
+            f"[PROCESS] highest_cpu="
+            f"{process_statistics['highest_cpu_percent']:.2f}% | "
+            f"high_cpu_count="
+            f"{process_statistics['high_cpu_count']}"
+        )
+
         if scored_detection["detected"]:
             score = scored_detection["score"]
             level = scored_detection["level"]
-            triggered_rules = scored_detection["triggered_rules"]
+            triggered_rules = scored_detection[
+                "triggered_rules"
+            ]
 
             quarantined_files = (
                 self.response_engine.handle_detection(

@@ -11,6 +11,7 @@ detection:
     rename_count: 10
     extension_change_count: 5
     average_entropy: 7.2
+    cpu_spike_percent: 80.0
 
 scoring:
   weights:

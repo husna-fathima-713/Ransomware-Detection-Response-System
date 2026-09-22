@@ -2,10 +2,11 @@ from pathlib import Path
 
 from app.core.entropy import calculate_file_entropy
 from app.detectors.event_stats import EventStats
+from app.detectors.process_stats import get_process_stats
 
 
 class ThreatDetector:
-    """Detect suspicious filesystem activity using configured thresholds."""
+    """Detect suspicious filesystem and process activity."""
 
     def __init__(
         self,
@@ -19,7 +20,7 @@ class ThreatDetector:
         self,
         affected_files: list[str] | None = None,
     ) -> dict:
-        """Evaluate recent filesystem activity against thresholds."""
+        """Evaluate recent filesystem and process activity."""
         statistics = self.event_stats.calculate()
 
         triggered_rules = []
@@ -65,23 +66,47 @@ class ThreatDetector:
                 >= self.thresholds["average_entropy"]
             )
 
+        process_statistics = get_process_stats()
+
+        highest_cpu = process_statistics[
+            "highest_cpu_percent"
+        ]
+
+        cpu_spike = (
+            highest_cpu
+            >= self.thresholds["cpu_spike_percent"]
+        )
+
         if rapid_encryption:
-            triggered_rules.append("rapid_file_modification")
+            triggered_rules.append(
+                "rapid_file_modification"
+            )
 
         if mass_rename:
-            triggered_rules.append("mass_rename")
+            triggered_rules.append(
+                "mass_rename"
+            )
 
         if extension_changes:
-            triggered_rules.append("extension_changes")
+            triggered_rules.append(
+                "extension_changes"
+            )
 
         if high_entropy:
-            triggered_rules.append("high_entropy")
+            triggered_rules.append(
+                "high_entropy"
+            )
+
+        if cpu_spike:
+            triggered_rules.append(
+                "cpu_spike"
+            )
 
         signals = {
             "rapid_encryption": rapid_encryption,
             "mass_rename": mass_rename,
             "high_entropy": high_entropy,
-            "cpu_spike": False,
+            "cpu_spike": cpu_spike,
             "unknown_program": False,
         }
 
@@ -91,4 +116,5 @@ class ThreatDetector:
             "signals": signals,
             "statistics": statistics,
             "average_entropy": average_entropy,
+            "process_statistics": process_statistics,
         }
