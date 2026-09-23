@@ -28,10 +28,17 @@ async def lifespan(app: FastAPI):
     thresholds = config["detection"]["thresholds"]
     scan_interval = config["monitoring"]["scan_interval_seconds"]
 
+    scoring_weights = config["scoring"]["weights"]
+    scoring_levels = config["scoring"]["levels"]
+    response_config = config["response"]
+
     observer = start_monitor(
-        watch_path,
-        window_seconds,
-        thresholds,
+        watch_path=watch_path,
+        window_seconds=window_seconds,
+        thresholds=thresholds,
+        scoring_weights=scoring_weights,
+        scoring_levels=scoring_levels,
+        response_config=response_config,
     )
 
     logger.info("Filesystem monitoring started")

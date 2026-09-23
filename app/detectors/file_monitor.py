@@ -1,21 +1,27 @@
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from app.core.config import load_config
+from app.core.response import ResponseEngine
 from app.database.database import create_database
 from app.database.repository import save_file_event
 from app.detectors.event import FileEvent
 from app.detectors.event_history import EventHistory
 from app.detectors.event_stats import EventStats
 from app.detectors.threat_detector import ThreatDetector
+from app.detectors.threat_scorer import ThreatScorer
 
 
 class RDRSEventHandler(FileSystemEventHandler):
-    """Handle file-system events and detect suspicious activity."""
+    """Handle file-system events and respond to suspicious activity."""
 
     def __init__(
         self,
         window_seconds: int = 60,
         thresholds: dict | None = None,
+        scoring_weights: dict | None = None,
+        scoring_levels: dict | None = None,
+        response_config: dict | None = None,
     ) -> None:
         super().__init__()
 
@@ -33,6 +39,24 @@ class RDRSEventHandler(FileSystemEventHandler):
         self.detector = ThreatDetector(
             self.stats,
             self.thresholds,
+        )
+
+        self.scorer = ThreatScorer(
+            weights=scoring_weights or {},
+            levels=scoring_levels,
+        )
+
+        response_config = response_config or {}
+
+        self.response_engine = ResponseEngine(
+            simulation_mode=response_config.get(
+                "simulation_mode",
+                True,
+            ),
+            quarantine_path=response_config.get(
+                "quarantine_path",
+                "data/quarantine",
+            ),
         )
 
     def _handle_event(
@@ -60,6 +84,7 @@ class RDRSEventHandler(FileSystemEventHandler):
 
         statistics = self.stats.calculate()
         detection = self.detector.detect()
+        scored_detection = self.scorer.score_detection(detection)
 
         print(
             f"[EVENT] {event.event_type.upper()} | "
@@ -78,11 +103,40 @@ class RDRSEventHandler(FileSystemEventHandler):
             f"{statistics['extension_changes']}"
         )
 
-        if detection["detected"]:
+        if scored_detection["detected"]:
+            score = scored_detection["score"]
+            level = scored_detection["level"]
+            triggered_rules = scored_detection["triggered_rules"]
+
+            affected_files = [
+                recent_event.path
+                for recent_event in self.history.get_events()
+                if recent_event.event_type in {
+                    "create",
+                    "modify",
+                    "rename",
+                }
+            ]
+
+            quarantined_files = self.response_engine.handle_detection(
+                score=score,
+                level=level,
+                triggered_rules=triggered_rules,
+                affected_files=affected_files,
+            )
+
             print(
                 f"[THREAT] DETECTED | "
-                f"rules={detection['triggered_rules']}"
+                f"score={score} | "
+                f"level={level} | "
+                f"rules={triggered_rules}"
             )
+
+            if quarantined_files:
+                print(
+                    f"[RESPONSE] Quarantined: "
+                    f"{quarantined_files}"
+                )
 
     def on_created(self, event) -> None:
         if not event.is_directory:
@@ -114,6 +168,9 @@ def start_monitor(
     watch_path: str,
     window_seconds: int = 60,
     thresholds: dict | None = None,
+    scoring_weights: dict | None = None,
+    scoring_levels: dict | None = None,
+    response_config: dict | None = None,
 ) -> Observer:
     """Start monitoring a directory."""
     create_database()
@@ -121,8 +178,11 @@ def start_monitor(
     observer = Observer()
 
     handler = RDRSEventHandler(
-        window_seconds,
-        thresholds,
+        window_seconds=window_seconds,
+        thresholds=thresholds,
+        scoring_weights=scoring_weights,
+        scoring_levels=scoring_levels,
+        response_config=response_config,
     )
 
     observer.schedule(
