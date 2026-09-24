@@ -1,7 +1,6 @@
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.core.config import load_config
 from app.core.response import ResponseEngine
 from app.database.database import create_database
 from app.database.repository import save_file_event
@@ -83,8 +82,24 @@ class RDRSEventHandler(FileSystemEventHandler):
         )
 
         statistics = self.stats.calculate()
-        detection = self.detector.detect()
-        scored_detection = self.scorer.score_detection(detection)
+
+        affected_files = [
+            recent_event.path
+            for recent_event in self.history.get_events()
+            if recent_event.event_type in {
+                "create",
+                "modify",
+                "rename",
+            }
+        ]
+
+        detection = self.detector.detect(
+            affected_files=affected_files,
+        )
+
+        scored_detection = self.scorer.score_detection(
+            detection
+        )
 
         print(
             f"[EVENT] {event.event_type.upper()} | "
@@ -108,21 +123,13 @@ class RDRSEventHandler(FileSystemEventHandler):
             level = scored_detection["level"]
             triggered_rules = scored_detection["triggered_rules"]
 
-            affected_files = [
-                recent_event.path
-                for recent_event in self.history.get_events()
-                if recent_event.event_type in {
-                    "create",
-                    "modify",
-                    "rename",
-                }
-            ]
-
-            quarantined_files = self.response_engine.handle_detection(
-                score=score,
-                level=level,
-                triggered_rules=triggered_rules,
-                affected_files=affected_files,
+            quarantined_files = (
+                self.response_engine.handle_detection(
+                    score=score,
+                    level=level,
+                    triggered_rules=triggered_rules,
+                    affected_files=affected_files,
+                )
             )
 
             print(
@@ -140,22 +147,34 @@ class RDRSEventHandler(FileSystemEventHandler):
 
     def on_created(self, event) -> None:
         if not event.is_directory:
-            self._handle_event("create", event.src_path)
+            self._handle_event(
+                "create",
+                event.src_path,
+            )
 
     def on_modified(self, event) -> None:
         if not event.is_directory:
-            self._handle_event("modify", event.src_path)
+            self._handle_event(
+                "modify",
+                event.src_path,
+            )
 
     def on_deleted(self, event) -> None:
         if not event.is_directory:
-            self._handle_event("delete", event.src_path)
+            self._handle_event(
+                "delete",
+                event.src_path,
+            )
 
     def on_moved(self, event) -> None:
         if not event.is_directory:
             old_extension = ""
 
             if "." in event.src_path.split("/")[-1]:
-                old_extension = "." + event.src_path.rsplit(".", 1)[-1]
+                old_extension = (
+                    "."
+                    + event.src_path.rsplit(".", 1)[-1]
+                )
 
             self._handle_event(
                 "rename",
