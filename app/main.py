@@ -1,8 +1,10 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from loguru import logger
 
 from app.api.routes import router
@@ -70,6 +72,18 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard():
+    """Serve the RDRS web dashboard."""
+    dashboard_path = (
+        Path(__file__).parent
+        / "dashboard"
+        / "index.html"
+    )
+
+    return FileResponse(dashboard_path)
 
 
 if __name__ == "__main__":

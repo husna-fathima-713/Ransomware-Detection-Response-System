@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDRS Dashboard</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #1f2937;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 20px 30px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        header p {
+            margin: 6px 0 0;
+            color: #9ca3af;
+        }
+
+        main {
+            padding: 25px;
+            max-width: 1400px;
+            margin: auto;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .card h3 {
+            margin: 0 0 10px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        .card .value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+
+        .section h2 {
+            margin-top: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f9fafb;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+
+        .normal {
+            color: #16a34a;
+        }
+
+        .warning {
+            color: #d97706;
+        }
+
+        .critical {
+            color: #dc2626;
+        }
+
+        .refresh {
+            margin-bottom: 20px;
+            padding: 8px 14px;
+            border: none;
+            border-radius: 5px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        .refresh:hover {
+            background: #1d4ed8;
+        }
+
+        @media (max-width: 900px) {
+            .cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 600px) {
+            .cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Ransomware Detection & Response System</h1>
+    <p>Endpoint monitoring and threat response dashboard</p>
+</header>
+
+<main>
+
+    <button class="refresh" onclick="loadDashboard()">
+        Refresh Dashboard
+    </button>
+
+    <div class="cards">
+
+        <div class="card">
+            <h3>System Status</h3>
+            <div id="system-status" class="value">
+                Loading...
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Total Events</h3>
+            <div id="event-count" class="value">
+                0
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Total Alerts</h3>
+            <div id="alert-count" class="value">
+                0
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Total Incidents</h3>
+            <div id="incident-count" class="value">
+                0
+            </div>
+        </div>
+
+    </div>
+
+    <div class="section">
+        <h2>Recent Alerts</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Score</th>
+                    <th>Level</th>
+                    <th>Rule</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+
+            <tbody id="alerts-table">
+                <tr>
+                    <td colspan="4">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Recent Incidents</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Score</th>
+                    <th>Level</th>
+                    <th>Status</th>
+                    <th>Affected Files</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+
+            <tbody id="incidents-table">
+                <tr>
+                    <td colspan="5">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Recent Filesystem Events</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Path</th>
+                    <th>Extension</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+
+            <tbody id="events-table">
+                <tr>
+                    <td colspan="4">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+</main>
+
+<script>
+    async function fetchJson(endpoint) {
+        const response = await fetch(endpoint);
+
+        if (!response.ok) {
+            throw new Error(
+                `Request failed: ${response.status}`
+            );
+        }
+
+        return response.json();
+    }
+
+    function formatTimestamp(timestamp) {
+        return new Date(timestamp).toLocaleString();
+    }
+
+    function renderAlerts(alerts) {
+        const table = document.getElementById(
+            "alerts-table"
+        );
+
+        if (!alerts.length) {
+            table.innerHTML =
+                "<tr><td colspan='4'>No alerts recorded</td></tr>";
+            return;
+        }
+
+        table.innerHTML = alerts.map(alert => `
+            <tr>
+                <td>${alert.score}</td>
+                <td class="${alert.level}">
+                    ${alert.level}
+                </td>
+                <td>${alert.rule}</td>
+                <td>${formatTimestamp(alert.timestamp)}</td>
+            </tr>
+        `).join("");
+    }
+
+    function renderIncidents(incidents) {
+        const table = document.getElementById(
+            "incidents-table"
+        );
+
+        if (!incidents.length) {
+            table.innerHTML =
+                "<tr><td colspan='5'>No incidents recorded</td></tr>";
+            return;
+        }
+
+        table.innerHTML = incidents.map(incident => `
+            <tr>
+                <td>${incident.score}</td>
+                <td class="${incident.level}">
+                    ${incident.level}
+                </td>
+                <td>${incident.status}</td>
+                <td>
+                    ${(incident.affected_files || []).join("<br>")}
+                </td>
+                <td>
+                    ${formatTimestamp(incident.timestamp)}
+                </td>
+            </tr>
+        `).join("");
+    }
+
+    function renderEvents(events) {
+        const table = document.getElementById(
+            "events-table"
+        );
+
+        if (!events.length) {
+            table.innerHTML =
+                "<tr><td colspan='4'>No events recorded</td></tr>";
+            return;
+        }
+
+        table.innerHTML = events.map(event => `
+            <tr>
+                <td>${event.event_type}</td>
+                <td>${event.path}</td>
+                <td>${event.extension || "-"}</td>
+                <td>${formatTimestamp(event.timestamp)}</td>
+            </tr>
+        `).join("");
+    }
+
+    async function loadDashboard() {
+        try {
+            const status = await fetchJson("/status");
+            const alerts = await fetchJson("/alerts?limit=10");
+            const incidents = await fetchJson(
+                "/incidents?limit=10"
+            );
+            const events = await fetchJson("/events?limit=10");
+
+            document.getElementById(
+                "system-status"
+            ).textContent = status.status;
+
+            document.getElementById(
+                "event-count"
+            ).textContent = status.events;
+
+            document.getElementById(
+                "alert-count"
+            ).textContent = status.alerts;
+
+            document.getElementById(
+                "incident-count"
+            ).textContent = status.incidents;
+
+            renderAlerts(alerts);
+            renderIncidents(incidents);
+            renderEvents(events);
+
+        } catch (error) {
+            console.error(error);
+
+            document.getElementById(
+                "system-status"
+            ).textContent = "API Error";
+        }
+    }
+
+    loadDashboard();
+
+    setInterval(
+        loadDashboard,
+        5000
+    );
+</script>
+
+</body>
+</html>
