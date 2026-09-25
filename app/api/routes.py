@@ -8,8 +8,11 @@ from app.database.repository import (
     get_recent_incidents,
     get_recent_processes,
 )
+from app.reports.report_generator import ReportGenerator
 
 router = APIRouter()
+
+report_generator = ReportGenerator()
 
 
 @router.get("/health")
@@ -63,3 +66,27 @@ def processes(limit: int = 50) -> list[dict]:
 def incidents(limit: int = 50) -> list[dict]:
     """Return recent security incidents."""
     return get_recent_incidents(limit)
+
+
+@router.post("/reports/json")
+def generate_json_report() -> dict:
+    """Generate a JSON security report."""
+    report_path = report_generator.generate_json()
+
+    return {
+        "status": "generated",
+        "format": "json",
+        "path": report_path,
+    }
+
+
+@router.post("/reports/csv")
+def generate_csv_report() -> dict:
+    """Generate a CSV security report."""
+    report_path = report_generator.generate_csv()
+
+    return {
+        "status": "generated",
+        "format": "csv",
+        "path": report_path,
+    }

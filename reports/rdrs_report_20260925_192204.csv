@@ -1,0 +1,11 @@
+record_type,id,event_type,path,score,level,status,rule,timestamp
+event,8,modify,data\sandbox\cpu_test.txt,,,,,2026-09-25T19:12:17.152168
+event,7,create,data\sandbox\cpu_test.txt,,,,,2026-09-25T19:12:16.161741
+event,6,modify,data\sandbox\entropy_test.txt,,,,,2026-09-25T19:08:37.649210
+event,5,create,data\sandbox\entropy_test.txt,,,,,2026-09-25T19:08:32.641362
+event,4,modify,data\sandbox\response_test.txt,,,,,2026-09-24T11:10:16.574052
+event,3,modify,data\sandbox\response_test.txt,,,,,2026-09-24T11:10:16.534960
+event,2,modify,data\sandbox\response_test.txt,,,,,2026-09-23T23:42:20.775849
+event,1,create,data\sandbox\response_test.txt,,,,,2026-09-23T23:42:16.234752
+alert,2,,,15,normal,,cpu_spike,2026-09-25T19:12:18.401523
+alert,1,,,15,normal,,cpu_spike,2026-09-25T19:12:17.129097
