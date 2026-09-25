@@ -1,10 +1,11 @@
 from fastapi import APIRouter
 
 from app.database.database import get_session
-from app.database.models import Alert, FileEventRecord
+from app.database.models import Alert, FileEventRecord, Incident
 from app.database.repository import (
     get_recent_alerts,
     get_recent_events,
+    get_recent_incidents,
     get_recent_processes,
 )
 
@@ -28,11 +29,13 @@ def status() -> dict:
     try:
         event_count = session.query(FileEventRecord).count()
         alert_count = session.query(Alert).count()
+        incident_count = session.query(Incident).count()
 
         return {
             "status": "monitoring",
             "events": event_count,
             "alerts": alert_count,
+            "incidents": incident_count,
         }
     finally:
         session.close()
@@ -54,3 +57,9 @@ def alerts(limit: int = 50) -> list[dict]:
 def processes(limit: int = 50) -> list[dict]:
     """Return recent process snapshots."""
     return get_recent_processes(limit)
+
+
+@router.get("/incidents")
+def incidents(limit: int = 50) -> list[dict]:
+    """Return recent security incidents."""
+    return get_recent_incidents(limit)

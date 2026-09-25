@@ -183,3 +183,34 @@ def get_recent_processes(limit: int = 50) -> list[dict]:
         ]
     finally:
         session.close()
+
+
+def get_recent_incidents(limit: int = 50) -> list[dict]:
+    """Return the most recent security incidents."""
+    session = get_session()
+
+    try:
+        records = (
+            session.query(Incident)
+            .order_by(Incident.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return [
+            {
+                "id": record.id,
+                "score": record.score,
+                "level": record.level,
+                "status": record.status,
+                "affected_files": (
+                    record.affected_files.splitlines()
+                    if record.affected_files
+                    else []
+                ),
+                "timestamp": record.timestamp.isoformat(),
+            }
+            for record in records
+        ]
+    finally:
+        session.close()
