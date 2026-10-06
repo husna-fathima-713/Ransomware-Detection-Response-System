@@ -1,0 +1,13 @@
+
+.venv/
+__pycache__/
+.pytest_cache/
+.git/
+.gitignore
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+logs/*
+reports/*
+data/quarantine/*
