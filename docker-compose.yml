@@ -1,0 +1,13 @@
+
+services:
+  rdrs:
+    build: .
+    container_name: rdrs
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/sandbox:/app/data/sandbox
+      - ./data/quarantine:/app/data/quarantine
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    restart: unless-stopped
