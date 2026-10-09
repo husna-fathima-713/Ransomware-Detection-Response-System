@@ -1,5 +1,5 @@
 from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 
 from app.core.response import ResponseEngine
 from app.database.database import create_database
