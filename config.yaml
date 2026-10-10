@@ -1,3 +1,4 @@
+
 monitoring:
   watch_paths:
     - data/sandbox
@@ -24,7 +25,7 @@ scoring:
   levels:
     normal: 40
     warning: 70
-    critical: 100
+    critical: 90
 
 response:
   simulation_mode: true
