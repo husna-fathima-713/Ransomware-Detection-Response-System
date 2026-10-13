@@ -1,7 +1,12 @@
+
+import logging
 from datetime import datetime
 
 from app.core.quarantine import QuarantineManager
 from app.database.repository import save_alert, save_incident
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResponseEngine:
@@ -40,15 +45,26 @@ class ResponseEngine:
         quarantined_files = []
 
         if level == "critical":
-            quarantined_files = self.quarantine.quarantine_files(
-                affected_files
-            )
+            try:
+                quarantined_files = self.quarantine.quarantine_files(
+                    affected_files
+                )
+            except Exception:
+                logger.exception(
+                    "Quarantine operation failed during critical response."
+                )
 
-            save_incident(
-                score=score,
-                level=level,
-                affected_files=quarantined_files,
-                timestamp=timestamp,
-            )
+            try:
+                save_incident(
+                    score=score,
+                    level=level,
+                    affected_files=quarantined_files,
+                    timestamp=timestamp,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to save incident record for critical detection."
+                )
+                raise
 
         return quarantined_files
