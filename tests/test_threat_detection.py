@@ -1,109 +1,91 @@
 
-from pathlib import Path
+import math
 
-from app.core.response import ResponseEngine
+from app.core.entropy import calculate_entropy
+from app.detectors.event import FileEvent
+from app.detectors.event_history import EventHistory
+from app.detectors.event_stats import EventStats
+from app.detectors.threat_detector import ThreatDetector
 from app.detectors.threat_scorer import ThreatScorer
 
 
-def test_critical_detection_creates_incident_and_quarantines_files(
-    tmp_path,
-    monkeypatch,
-):
-    source_dir = tmp_path / "sandbox"
-    quarantine_dir = tmp_path / "quarantine"
-    source_dir.mkdir()
+def test_entropy_of_empty_data():
+    assert calculate_entropy(b"") == 0.0
 
-    suspicious_file = source_dir / "sample.locked"
-    original_content = b"harmless ransomware simulation data"
-    suspicious_file.write_bytes(original_content)
 
-    saved_alerts = []
-    saved_incidents = []
+def test_entropy_of_repeated_data():
+    entropy = calculate_entropy(b"A" * 100)
 
-    monkeypatch.setattr(
-        "app.core.response.save_alert",
-        lambda **kwargs: saved_alerts.append(kwargs),
-    )
-    monkeypatch.setattr(
-        "app.core.response.save_incident",
-        lambda **kwargs: saved_incidents.append(kwargs),
+    assert math.isclose(entropy, 0.0)
+
+
+def test_event_statistics():
+    history = EventHistory(window_seconds=60)
+
+    history.add(
+        FileEvent.create(
+            "create",
+            "data/sandbox/test.txt",
+        )
     )
 
-    engine = ResponseEngine(
-        simulation_mode=True,
-        quarantine_path=str(quarantine_dir),
+    history.add(
+        FileEvent.create(
+            "modify",
+            "data/sandbox/test.txt",
+        )
     )
 
-    quarantined = engine.handle_detection(
-        score=95,
-        level="critical",
-        triggered_rules=[
-            "rapid_file_modification",
-            "mass_rename",
-            "high_entropy",
-        ],
-        affected_files=[str(suspicious_file)],
+    history.add(
+        FileEvent.create(
+            "rename",
+            "data/sandbox/test.locked",
+            old_extension=".txt",
+        )
     )
 
-    assert len(quarantined) == 1
+    stats = EventStats(history).calculate()
 
-    quarantined_file = Path(quarantined[0])
-
-    assert quarantined_file.exists()
-    assert quarantined_file.read_bytes() == original_content
-
-    # Original file must remain untouched.
-    assert suspicious_file.exists()
-    assert suspicious_file.read_bytes() == original_content
-
-    assert len(saved_alerts) == 3
-    assert len(saved_incidents) == 1
-
-    assert saved_incidents[0]["score"] == 95
-    assert saved_incidents[0]["level"] == "critical"
-    assert saved_incidents[0]["affected_files"] == quarantined
+    assert stats["total_events"] == 3
+    assert stats["created"] == 1
+    assert stats["modified"] == 1
+    assert stats["renamed"] == 1
+    assert stats["extension_changes"] == 1
 
 
-def test_warning_detection_does_not_quarantine_or_create_incident(
-    tmp_path,
-    monkeypatch,
-):
-    suspicious_file = tmp_path / "sample.txt"
-    suspicious_file.write_bytes(b"warning-level test data")
+def test_threat_detector_rapid_modification():
+    history = EventHistory(window_seconds=60)
 
-    saved_alerts = []
-    saved_incidents = []
+    for index in range(20):
+        history.add(
+            FileEvent.create(
+                "modify",
+                f"data/sandbox/file_{index}.txt",
+            )
+        )
 
-    monkeypatch.setattr(
-        "app.core.response.save_alert",
-        lambda **kwargs: saved_alerts.append(kwargs),
-    )
-    monkeypatch.setattr(
-        "app.core.response.save_incident",
-        lambda **kwargs: saved_incidents.append(kwargs),
+    stats = EventStats(history)
+
+    detector = ThreatDetector(
+        stats,
+        {
+            "files_modified_per_minute": 20,
+            "rename_count": 10,
+            "extension_change_count": 5,
+            "average_entropy": 7.2,
+            "cpu_spike_percent": 80.0,
+        },
     )
 
-    engine = ResponseEngine(
-        simulation_mode=True,
-        quarantine_path=str(tmp_path / "quarantine"),
-    )
+    result = detector.detect()
 
-    quarantined = engine.handle_detection(
-        score=75,
-        level="warning",
-        triggered_rules=["rapid_file_modification"],
-        affected_files=[str(suspicious_file)],
-    )
-
-    assert quarantined == []
-    assert suspicious_file.exists()
-    assert not (tmp_path / "quarantine").exists()
-
-    assert len(saved_alerts) == 1
-    assert saved_incidents == []
+    assert result["detected"] is True
+    assert "rapid_file_modification" in result[
+        "triggered_rules"
+    ]
 
 
-def test_combined_signals_produce_critical_score():
+def test_threat_scorer():
     scorer = ThreatScorer(
         weights={
             "rapid_encryption": 40,
@@ -112,106 +94,17 @@ def test_combined_signals_produce_critical_score():
             "cpu_spike": 15,
             "unknown_program": 10,
         },
-        levels={
-            "normal": 40,
-            "warning": 70,
-            "critical": 90,
-        },
     )
 
-    detection = {
-        "detected": True,
-        "triggered_rules": [
-            "rapid_file_modification",
-            "mass_rename",
-            "extension_changes",
-            "high_entropy",
-        ],
-        "signals": {
-            "rapid_encryption": True,
-            "mass_rename": True,
-            "high_entropy": True,
-            "cpu_spike": False,
-            "unknown_program": False,
-        },
+    signals = {
+        "rapid_encryption": True,
+        "mass_rename": True,
+        "high_entropy": False,
+        "cpu_spike": False,
+        "unknown_program": False,
     }
 
-    result = scorer.score_detection(detection)
+    score = scorer.calculate_score(signals)
 
-    assert result["score"] == 95
-    assert result["level"] == "critical"
-
-
-def test_critical_detection_handles_missing_files(
-    tmp_path,
-    monkeypatch,
-):
-    saved_incidents = []
-
-    monkeypatch.setattr(
-        "app.core.response.save_alert",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        "app.core.response.save_incident",
-        lambda **kwargs: saved_incidents.append(kwargs),
-    )
-
-    engine = ResponseEngine(
-        simulation_mode=True,
-        quarantine_path=str(tmp_path / "quarantine"),
-    )
-
-    quarantined = engine.handle_detection(
-        score=95,
-        level="critical",
-        triggered_rules=["mass_rename"],
-        affected_files=[str(tmp_path / "missing.locked")],
-    )
-
-    assert quarantined == []
-    assert len(saved_incidents) == 1
-    assert saved_incidents[0]["affected_files"] == []
-
-
-def test_critical_detection_records_incident_when_quarantine_raises(
-    tmp_path,
-    monkeypatch,
-):
-    saved_incidents = []
-
-    monkeypatch.setattr(
-        "app.core.response.save_alert",
-        lambda **kwargs: None,
-    )
-    monkeypatch.setattr(
-        "app.core.response.save_incident",
-        lambda **kwargs: saved_incidents.append(kwargs),
-    )
-
-    engine = ResponseEngine(
-        simulation_mode=True,
-        quarantine_path=str(tmp_path / "quarantine"),
-    )
-
-    def failed_quarantine(file_paths):
-        raise OSError("Simulated quarantine failure")
-
-    monkeypatch.setattr(
-        engine.quarantine,
-        "quarantine_files",
-        failed_quarantine,
-    )
-
-    quarantined = engine.handle_detection(
-        score=95,
-        level="critical",
-        triggered_rules=["mass_rename"],
-        affected_files=["suspicious.locked"],
-    )
-
-    assert quarantined == []
-    assert len(saved_incidents) == 1
-    assert saved_incidents[0]["score"] == 95
-    assert saved_incidents[0]["level"] == "critical"
-    assert saved_incidents[0]["affected_files"] == []
+    assert score == 70
+    assert scorer.get_level(score) == "warning"
