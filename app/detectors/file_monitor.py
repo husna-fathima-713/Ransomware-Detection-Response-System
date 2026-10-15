@@ -1,3 +1,7 @@
+
+import logging
+from pathlib import Path
+
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver as Observer
 
@@ -9,6 +13,9 @@ from app.detectors.event_history import EventHistory
 from app.detectors.event_stats import EventStats
 from app.detectors.threat_detector import ThreatDetector
 from app.detectors.threat_scorer import ThreatScorer
+
+
+logger = logging.getLogger(__name__)
 
 
 class RDRSEventHandler(FileSystemEventHandler):
@@ -65,6 +72,27 @@ class RDRSEventHandler(FileSystemEventHandler):
         path: str,
         old_extension: str = "",
     ) -> None:
+        """Process one filesystem event without terminating the monitor."""
+        try:
+            self._process_event(
+                event_type,
+                path,
+                old_extension,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to process filesystem event: type=%s path=%s",
+                event_type,
+                path,
+            )
+
+    def _process_event(
+        self,
+        event_type: str,
+        path: str,
+        old_extension: str = "",
+    ) -> None:
+        """Run the event storage, detection, scoring, and response pipeline."""
         event = FileEvent.create(
             event_type,
             path,
@@ -182,13 +210,7 @@ class RDRSEventHandler(FileSystemEventHandler):
 
     def on_moved(self, event) -> None:
         if not event.is_directory:
-            old_extension = ""
-
-            if "." in event.src_path.split("/")[-1]:
-                old_extension = (
-                    "."
-                    + event.src_path.rsplit(".", 1)[-1]
-                )
+            old_extension = Path(event.src_path).suffix
 
             self._handle_event(
                 "rename",
