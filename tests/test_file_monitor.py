@@ -1,3 +1,5 @@
+
+import logging
 from types import SimpleNamespace
 
 from app.detectors import file_monitor
@@ -118,3 +120,106 @@ def test_directory_events_are_ignored(monkeypatch, tmp_path):
 
     assert handler.event_count == 0
     assert recorded_events == []
+
+
+def test_monitor_continues_after_event_storage_failure(
+    monkeypatch,
+    tmp_path,
+    caplog,
+):
+    recorded_events = []
+    handler = create_handler(
+        monkeypatch,
+        recorded_events,
+        tmp_path,
+    )
+
+    calls = 0
+
+    def failing_save(**kwargs):
+        nonlocal calls
+        calls += 1
+
+        if calls == 1:
+            raise OSError("Simulated database failure")
+
+        recorded_events.append(kwargs)
+
+    monkeypatch.setattr(
+        file_monitor,
+        "save_file_event",
+        failing_save,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        handler.on_created(
+            SimpleNamespace(
+                is_directory=False,
+                src_path=str(tmp_path / "first.txt"),
+            )
+        )
+
+        handler.on_created(
+            SimpleNamespace(
+                is_directory=False,
+                src_path=str(tmp_path / "second.txt"),
+            )
+        )
+
+    assert handler.event_count == 2
+    assert len(recorded_events) == 1
+    assert recorded_events[0]["path"] == str(
+        tmp_path / "second.txt"
+    )
+    assert "Failed to process filesystem event" in caplog.text
+
+
+def test_monitor_continues_after_detection_failure(
+    monkeypatch,
+    tmp_path,
+    caplog,
+):
+    recorded_events = []
+    handler = create_handler(
+        monkeypatch,
+        recorded_events,
+        tmp_path,
+    )
+
+    original_detect = handler.detector.detect
+    calls = 0
+
+    def failing_detect(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+
+        if calls == 1:
+            raise RuntimeError("Simulated detection failure")
+
+        return original_detect(*args, **kwargs)
+
+    monkeypatch.setattr(
+        handler.detector,
+        "detect",
+        failing_detect,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        handler.on_created(
+            SimpleNamespace(
+                is_directory=False,
+                src_path=str(tmp_path / "first.txt"),
+            )
+        )
+
+        handler.on_created(
+            SimpleNamespace(
+                is_directory=False,
+                src_path=str(tmp_path / "second.txt"),
+            )
+        )
+
+    assert handler.event_count == 2
+    assert len(recorded_events) == 2
+    assert calls == 2
+    assert "Failed to process filesystem event" in caplog.text
