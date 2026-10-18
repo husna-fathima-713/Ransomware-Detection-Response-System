@@ -1,3 +1,5 @@
+
+import logging
 from datetime import datetime
 
 from app.database.database import get_session
@@ -9,6 +11,27 @@ from app.database.models import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
+def _save_record(record) -> None:
+    """Save one database record with safe transaction handling."""
+    session = get_session()
+
+    try:
+        session.add(record)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception(
+            "Database write failed for %s.",
+            type(record).__name__,
+        )
+        raise
+    finally:
+        session.close()
+
+
 def save_file_event(
     event_type: str,
     path: str,
@@ -17,21 +40,15 @@ def save_file_event(
     timestamp: datetime | None = None,
 ) -> None:
     """Save a filesystem event to SQLite."""
-    session = get_session()
+    record = FileEventRecord(
+        event_type=event_type,
+        path=path,
+        extension=extension,
+        old_extension=old_extension,
+        timestamp=timestamp or datetime.now(),
+    )
 
-    try:
-        record = FileEventRecord(
-            event_type=event_type,
-            path=path,
-            extension=extension,
-            old_extension=old_extension,
-            timestamp=timestamp or datetime.now(),
-        )
-
-        session.add(record)
-        session.commit()
-    finally:
-        session.close()
+    _save_record(record)
 
 
 def save_process_snapshot(
@@ -39,22 +56,16 @@ def save_process_snapshot(
     timestamp: datetime | None = None,
 ) -> None:
     """Save a process snapshot to SQLite."""
-    session = get_session()
+    record = ProcessRecord(
+        pid=process["pid"],
+        name=process["name"] or "",
+        username=process["username"],
+        cpu_percent=process["cpu_percent"] or 0.0,
+        memory_percent=process["memory_percent"] or 0.0,
+        timestamp=timestamp or datetime.now(),
+    )
 
-    try:
-        record = ProcessRecord(
-            pid=process["pid"],
-            name=process["name"] or "",
-            username=process["username"],
-            cpu_percent=process["cpu_percent"] or 0.0,
-            memory_percent=process["memory_percent"] or 0.0,
-            timestamp=timestamp or datetime.now(),
-        )
-
-        session.add(record)
-        session.commit()
-    finally:
-        session.close()
+    _save_record(record)
 
 
 def save_alert(
@@ -64,20 +75,14 @@ def save_alert(
     timestamp: datetime | None = None,
 ) -> None:
     """Save a threat alert to SQLite."""
-    session = get_session()
+    record = Alert(
+        score=score,
+        level=level,
+        rule=rule,
+        timestamp=timestamp or datetime.now(),
+    )
 
-    try:
-        record = Alert(
-            score=score,
-            level=level,
-            rule=rule,
-            timestamp=timestamp or datetime.now(),
-        )
-
-        session.add(record)
-        session.commit()
-    finally:
-        session.close()
+    _save_record(record)
 
 
 def save_incident(
@@ -87,21 +92,15 @@ def save_incident(
     timestamp: datetime | None = None,
 ) -> None:
     """Save a security incident to SQLite."""
-    session = get_session()
+    record = Incident(
+        score=score,
+        level=level,
+        status="open",
+        affected_files="\n".join(affected_files),
+        timestamp=timestamp or datetime.now(),
+    )
 
-    try:
-        record = Incident(
-            score=score,
-            level=level,
-            status="open",
-            affected_files="\n".join(affected_files),
-            timestamp=timestamp or datetime.now(),
-        )
-
-        session.add(record)
-        session.commit()
-    finally:
-        session.close()
+    _save_record(record)
 
 
 def get_recent_events(limit: int = 50) -> list[dict]:
