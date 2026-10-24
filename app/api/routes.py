@@ -1,4 +1,6 @@
-from fastapi import APIRouter
+
+from fastapi import APIRouter, HTTPException, Query
+from loguru import logger
 
 from app.database.database import get_session
 from app.database.models import Alert, FileEventRecord, Incident
@@ -13,6 +15,8 @@ from app.reports.report_generator import ReportGenerator
 router = APIRouter()
 
 report_generator = ReportGenerator()
+
+MAX_RECORD_LIMIT = 500
 
 
 @router.get("/health")
@@ -45,48 +49,71 @@ def status() -> dict:
 
 
 @router.get("/events")
-def events(limit: int = 50) -> list[dict]:
-    """Return recent filesystem events."""
+def events(
+    limit: int = Query(default=50, ge=1, le=MAX_RECORD_LIMIT),
+) -> list[dict]:
+    """Return a bounded number of recent filesystem events."""
     return get_recent_events(limit)
 
 
 @router.get("/alerts")
-def alerts(limit: int = 50) -> list[dict]:
-    """Return recent threat alerts."""
+def alerts(
+    limit: int = Query(default=50, ge=1, le=MAX_RECORD_LIMIT),
+) -> list[dict]:
+    """Return a bounded number of recent threat alerts."""
     return get_recent_alerts(limit)
 
 
 @router.get("/processes")
-def processes(limit: int = 50) -> list[dict]:
-    """Return recent process snapshots."""
+def processes(
+    limit: int = Query(default=50, ge=1, le=MAX_RECORD_LIMIT),
+) -> list[dict]:
+    """Return a bounded number of recent process snapshots."""
     return get_recent_processes(limit)
 
 
 @router.get("/incidents")
-def incidents(limit: int = 50) -> list[dict]:
-    """Return recent security incidents."""
+def incidents(
+    limit: int = Query(default=50, ge=1, le=MAX_RECORD_LIMIT),
+) -> list[dict]:
+    """Return a bounded number of recent security incidents."""
     return get_recent_incidents(limit)
+
+
+def _generate_report(generator_method, report_format: str) -> dict:
+    """Generate a report and return a controlled API error on failure."""
+    try:
+        report_path = generator_method()
+    except Exception:
+        logger.exception(
+            "Failed to generate {} report",
+            report_format,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Report generation failed.",
+        ) from None
+
+    return {
+        "status": "generated",
+        "format": report_format,
+        "path": report_path,
+    }
 
 
 @router.post("/reports/json")
 def generate_json_report() -> dict:
     """Generate a JSON security report."""
-    report_path = report_generator.generate_json()
-
-    return {
-        "status": "generated",
-        "format": "json",
-        "path": report_path,
-    }
+    return _generate_report(
+        report_generator.generate_json,
+        "json",
+    )
 
 
 @router.post("/reports/csv")
 def generate_csv_report() -> dict:
     """Generate a CSV security report."""
-    report_path = report_generator.generate_csv()
-
-    return {
-        "status": "generated",
-        "format": "csv",
-        "path": report_path,
-    }
+    return _generate_report(
+        report_generator.generate_csv,
+        "csv",
+    )
