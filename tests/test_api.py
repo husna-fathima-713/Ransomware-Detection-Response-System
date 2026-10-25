@@ -1,3 +1,5 @@
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -96,9 +98,7 @@ def test_incidents_endpoint(monkeypatch):
             "score": 100,
             "level": "critical",
             "status": "open",
-            "affected_files": [
-                "data/sandbox/test.locked"
-            ],
+            "affected_files": ["data/sandbox/test.locked"],
             "timestamp": "2026-09-29T10:00:00",
         }
     ]
@@ -113,6 +113,47 @@ def test_incidents_endpoint(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == expected
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    ["/events", "/alerts", "/processes", "/incidents"],
+)
+@pytest.mark.parametrize("limit", ["0", "501", "-1"])
+def test_data_endpoints_reject_invalid_limits(endpoint, limit):
+    response = client.get(f"{endpoint}?limit={limit}")
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("method_name", "endpoint", "report_format"),
+    [
+        ("generate_json", "/reports/json", "json"),
+        ("generate_csv", "/reports/csv", "csv"),
+    ],
+)
+def test_report_endpoint_handles_generation_failure(
+    monkeypatch,
+    method_name,
+    endpoint,
+    report_format,
+):
+    def fail_generation():
+        raise OSError("Simulated report storage failure")
+
+    monkeypatch.setattr(
+        routes.report_generator,
+        method_name,
+        fail_generation,
+    )
+
+    response = client.post(endpoint)
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "Report generation failed."
+    }
 
 
 def test_json_report_endpoint(monkeypatch):
