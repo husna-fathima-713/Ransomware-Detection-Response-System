@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -87,6 +88,7 @@
             text-align: left;
             border-bottom: 1px solid #e5e7eb;
             font-size: 14px;
+            overflow-wrap: anywhere;
         }
 
         th {
@@ -123,6 +125,11 @@
             background: #1d4ed8;
         }
 
+        .refresh:disabled {
+            opacity: 0.6;
+            cursor: wait;
+        }
+
         @media (max-width: 900px) {
             .cards {
                 grid-template-columns: repeat(2, 1fr);
@@ -132,6 +139,10 @@
         @media (max-width: 600px) {
             .cards {
                 grid-template-columns: 1fr;
+            }
+
+            main {
+                padding: 15px;
             }
         }
     </style>
@@ -146,7 +157,7 @@
 
 <main>
 
-    <button class="refresh" onclick="loadDashboard()">
+    <button class="refresh" id="refresh-button" type="button">
         Refresh Dashboard
     </button>
 
@@ -161,30 +172,23 @@
 
         <div class="card">
             <h3>Total Events</h3>
-            <div id="event-count" class="value">
-                0
-            </div>
+            <div id="event-count" class="value">0</div>
         </div>
 
         <div class="card">
             <h3>Total Alerts</h3>
-            <div id="alert-count" class="value">
-                0
-            </div>
+            <div id="alert-count" class="value">0</div>
         </div>
 
         <div class="card">
             <h3>Total Incidents</h3>
-            <div id="incident-count" class="value">
-                0
-            </div>
+            <div id="incident-count" class="value">0</div>
         </div>
 
     </div>
 
     <div class="section">
         <h2>Recent Alerts</h2>
-
         <table>
             <thead>
                 <tr>
@@ -194,18 +198,14 @@
                     <th>Timestamp</th>
                 </tr>
             </thead>
-
             <tbody id="alerts-table">
-                <tr>
-                    <td colspan="4">Loading...</td>
-                </tr>
+                <tr><td colspan="4">Loading...</td></tr>
             </tbody>
         </table>
     </div>
 
     <div class="section">
         <h2>Recent Incidents</h2>
-
         <table>
             <thead>
                 <tr>
@@ -216,18 +216,14 @@
                     <th>Timestamp</th>
                 </tr>
             </thead>
-
             <tbody id="incidents-table">
-                <tr>
-                    <td colspan="5">Loading...</td>
-                </tr>
+                <tr><td colspan="5">Loading...</td></tr>
             </tbody>
         </table>
     </div>
 
     <div class="section">
         <h2>Recent Filesystem Events</h2>
-
         <table>
             <thead>
                 <tr>
@@ -237,11 +233,8 @@
                     <th>Timestamp</th>
                 </tr>
             </thead>
-
             <tbody id="events-table">
-                <tr>
-                    <td colspan="4">Loading...</td>
-                </tr>
+                <tr><td colspan="4">Loading...</td></tr>
             </tbody>
         </table>
     </div>
@@ -249,138 +242,242 @@
 </main>
 
 <script>
+    const refreshButton = document.getElementById("refresh-button");
+
+    let dashboardLoading = false;
+
+    const allowedLevels = new Set([
+        "normal",
+        "warning",
+        "critical"
+    ]);
+
     async function fetchJson(endpoint) {
-        const response = await fetch(endpoint);
+        const response = await fetch(endpoint, {
+            method: "GET",
+            cache: "no-store",
+            headers: {
+                "Accept": "application/json"
+            }
+        });
 
         if (!response.ok) {
-            throw new Error(
-                `Request failed: ${response.status}`
-            );
+            throw new Error(`Request failed: ${response.status}`);
         }
 
         return response.json();
     }
 
+    function setText(elementId, value) {
+        document.getElementById(elementId).textContent = String(value);
+    }
+
     function formatTimestamp(timestamp) {
-        return new Date(timestamp).toLocaleString();
+        if (!timestamp) {
+            return "Unknown";
+        }
+
+        const date = new Date(timestamp);
+
+        if (Number.isNaN(date.getTime())) {
+            return "Invalid timestamp";
+        }
+
+        return date.toLocaleString();
+    }
+
+    function createCell(value) {
+        const cell = document.createElement("td");
+        cell.textContent = value == null ? "-" : String(value);
+        return cell;
+    }
+
+    function createLevelCell(level) {
+        const cell = createCell(level);
+
+        const normalizedLevel =
+            typeof level === "string" ? level.toLowerCase() : "";
+
+        if (allowedLevels.has(normalizedLevel)) {
+            cell.classList.add(normalizedLevel);
+        }
+
+        return cell;
+    }
+
+    function showTableMessage(tableId, columnCount, message) {
+        const table = document.getElementById(tableId);
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+
+        cell.colSpan = columnCount;
+        cell.textContent = message;
+
+        row.appendChild(cell);
+        table.replaceChildren(row);
     }
 
     function renderAlerts(alerts) {
-        const table = document.getElementById(
-            "alerts-table"
-        );
+        const table = document.getElementById("alerts-table");
 
-        if (!alerts.length) {
-            table.innerHTML =
-                "<tr><td colspan='4'>No alerts recorded</td></tr>";
+        if (!Array.isArray(alerts) || alerts.length === 0) {
+            showTableMessage("alerts-table", 4, "No alerts recorded");
             return;
         }
 
-        table.innerHTML = alerts.map(alert => `
-            <tr>
-                <td>${alert.score}</td>
-                <td class="${alert.level}">
-                    ${alert.level}
-                </td>
-                <td>${alert.rule}</td>
-                <td>${formatTimestamp(alert.timestamp)}</td>
-            </tr>
-        `).join("");
+        const fragment = document.createDocumentFragment();
+
+        alerts.forEach(alert => {
+            const row = document.createElement("tr");
+
+            row.appendChild(createCell(alert.score));
+            row.appendChild(createLevelCell(alert.level));
+            row.appendChild(createCell(alert.rule));
+            row.appendChild(createCell(formatTimestamp(alert.timestamp)));
+
+            fragment.appendChild(row);
+        });
+
+        table.replaceChildren(fragment);
     }
 
     function renderIncidents(incidents) {
-        const table = document.getElementById(
-            "incidents-table"
-        );
+        const table = document.getElementById("incidents-table");
 
-        if (!incidents.length) {
-            table.innerHTML =
-                "<tr><td colspan='5'>No incidents recorded</td></tr>";
+        if (!Array.isArray(incidents) || incidents.length === 0) {
+            showTableMessage("incidents-table", 5, "No incidents recorded");
             return;
         }
 
-        table.innerHTML = incidents.map(incident => `
-            <tr>
-                <td>${incident.score}</td>
-                <td class="${incident.level}">
-                    ${incident.level}
-                </td>
-                <td>${incident.status}</td>
-                <td>
-                    ${(incident.affected_files || []).join("<br>")}
-                </td>
-                <td>
-                    ${formatTimestamp(incident.timestamp)}
-                </td>
-            </tr>
-        `).join("");
+        const fragment = document.createDocumentFragment();
+
+        incidents.forEach(incident => {
+            const row = document.createElement("tr");
+
+            row.appendChild(createCell(incident.score));
+            row.appendChild(createLevelCell(incident.level));
+            row.appendChild(createCell(incident.status));
+
+            const filesCell = document.createElement("td");
+            const files = Array.isArray(incident.affected_files)
+                ? incident.affected_files
+                : [];
+
+            files.forEach((file, index) => {
+                if (index > 0) {
+                    filesCell.appendChild(document.createElement("br"));
+                }
+
+                filesCell.appendChild(
+                    document.createTextNode(String(file))
+                );
+            });
+
+            if (files.length === 0) {
+                filesCell.textContent = "-";
+            }
+
+            row.appendChild(filesCell);
+            row.appendChild(createCell(formatTimestamp(incident.timestamp)));
+
+            fragment.appendChild(row);
+        });
+
+        table.replaceChildren(fragment);
     }
 
     function renderEvents(events) {
-        const table = document.getElementById(
-            "events-table"
-        );
+        const table = document.getElementById("events-table");
 
-        if (!events.length) {
-            table.innerHTML =
-                "<tr><td colspan='4'>No events recorded</td></tr>";
+        if (!Array.isArray(events) || events.length === 0) {
+            showTableMessage("events-table", 4, "No events recorded");
             return;
         }
 
-        table.innerHTML = events.map(event => `
-            <tr>
-                <td>${event.event_type}</td>
-                <td>${event.path}</td>
-                <td>${event.extension || "-"}</td>
-                <td>${formatTimestamp(event.timestamp)}</td>
-            </tr>
-        `).join("");
+        const fragment = document.createDocumentFragment();
+
+        events.forEach(event => {
+            const row = document.createElement("tr");
+
+            row.appendChild(createCell(event.event_type));
+            row.appendChild(createCell(event.path));
+            row.appendChild(createCell(event.extension || "-"));
+            row.appendChild(createCell(formatTimestamp(event.timestamp)));
+
+            fragment.appendChild(row);
+        });
+
+        table.replaceChildren(fragment);
     }
 
-    async function loadDashboard() {
+    async function loadSection(endpoint, renderFunction, tableId, columns) {
         try {
-            const status = await fetchJson("/status");
-            const alerts = await fetchJson("/alerts?limit=10");
-            const incidents = await fetchJson(
-                "/incidents?limit=10"
-            );
-            const events = await fetchJson("/events?limit=10");
-
-            document.getElementById(
-                "system-status"
-            ).textContent = status.status;
-
-            document.getElementById(
-                "event-count"
-            ).textContent = status.events;
-
-            document.getElementById(
-                "alert-count"
-            ).textContent = status.alerts;
-
-            document.getElementById(
-                "incident-count"
-            ).textContent = status.incidents;
-
-            renderAlerts(alerts);
-            renderIncidents(incidents);
-            renderEvents(events);
-
+            const data = await fetchJson(endpoint);
+            renderFunction(data);
         } catch (error) {
-            console.error(error);
+            console.error(`Dashboard request failed: ${endpoint}`, error);
 
-            document.getElementById(
-                "system-status"
-            ).textContent = "API Error";
+            showTableMessage(
+                tableId,
+                columns,
+                "Unable to load data. Check API connection."
+            );
         }
     }
 
+    async function loadDashboard() {
+        if (dashboardLoading) {
+            return;
+        }
+
+        dashboardLoading = true;
+        refreshButton.disabled = true;
+
+        try {
+            try {
+                const status = await fetchJson("/status");
+
+                setText("system-status", status.status ?? "Unknown");
+                setText("event-count", status.events ?? 0);
+                setText("alert-count", status.alerts ?? 0);
+                setText("incident-count", status.incidents ?? 0);
+            } catch (error) {
+                console.error("Status request failed:", error);
+                setText("system-status", "API Error");
+            }
+
+            await Promise.all([
+                loadSection(
+                    "/alerts?limit=10",
+                    renderAlerts,
+                    "alerts-table",
+                    4
+                ),
+                loadSection(
+                    "/incidents?limit=10",
+                    renderIncidents,
+                    "incidents-table",
+                    5
+                ),
+                loadSection(
+                    "/events?limit=10",
+                    renderEvents,
+                    "events-table",
+                    4
+                )
+            ]);
+
+        } finally {
+            dashboardLoading = false;
+            refreshButton.disabled = false;
+        }
+    }
+
+    refreshButton.addEventListener("click", loadDashboard);
+
     loadDashboard();
 
-    setInterval(
-        loadDashboard,
-        5000
-    );
+    setInterval(loadDashboard, 5000);
 </script>
 
 </body>
