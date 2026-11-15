@@ -52,6 +52,7 @@ def test_critical_detection_creates_incident_and_quarantines_files(
     assert quarantined_file.exists()
     assert quarantined_file.read_bytes() == original_content
 
+    # Quarantine must preserve the original file.
     assert suspicious_file.exists()
     assert suspicious_file.read_bytes() == original_content
 
@@ -60,7 +61,11 @@ def test_critical_detection_creates_incident_and_quarantines_files(
 
     assert saved_incidents[0]["score"] == 95
     assert saved_incidents[0]["level"] == "critical"
-    assert saved_incidents[0]["affected_files"] == quarantined
+
+    # Incident records retain the original affected paths.
+    assert saved_incidents[0]["affected_files"] == [
+        str(suspicious_file)
+    ]
 
 
 def test_warning_detection_does_not_quarantine_or_create_incident(
@@ -156,6 +161,8 @@ def test_critical_detection_handles_missing_files(
         lambda **kwargs: saved_incidents.append(kwargs),
     )
 
+    missing_file = tmp_path / "missing.locked"
+
     engine = ResponseEngine(
         simulation_mode=True,
         quarantine_path=str(tmp_path / "quarantine"),
@@ -165,12 +172,16 @@ def test_critical_detection_handles_missing_files(
         score=95,
         level="critical",
         triggered_rules=["mass_rename"],
-        affected_files=[str(tmp_path / "missing.locked")],
+        affected_files=[str(missing_file)],
     )
 
     assert quarantined == []
     assert len(saved_incidents) == 1
-    assert saved_incidents[0]["affected_files"] == []
+
+    # Preserve the original affected path even when the file is missing.
+    assert saved_incidents[0]["affected_files"] == [
+        str(missing_file)
+    ]
 
 
 def test_critical_detection_records_incident_when_quarantine_raises(
@@ -213,4 +224,6 @@ def test_critical_detection_records_incident_when_quarantine_raises(
     assert len(saved_incidents) == 1
     assert saved_incidents[0]["score"] == 95
     assert saved_incidents[0]["level"] == "critical"
-    assert saved_incidents[0]["affected_files"] == []
+    assert saved_incidents[0]["affected_files"] == [
+        "suspicious.locked"
+    ]
