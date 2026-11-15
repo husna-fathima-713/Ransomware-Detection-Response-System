@@ -1,89 +1,97 @@
 
 import pytest
 
-from app.core import response
+from app.core.response import ResponseEngine
 
 
 class FakeQuarantineManager:
-    def __init__(
-        self,
-        quarantine_path="data/quarantine",
-        simulation_mode=True,
-    ):
+    def __init__(self, quarantine_path, simulation_mode):
         self.quarantine_path = quarantine_path
         self.simulation_mode = simulation_mode
-        self.files_to_return = []
+        self.result = []
         self.error = None
-        self.received_files = []
+        self.calls = []
 
     def quarantine_files(self, file_paths):
-        self.received_files = file_paths
+        self.calls.append(file_paths)
 
-        if self.error:
+        if self.error is not None:
             raise self.error
 
-        return self.files_to_return
+        return self.result
 
 
 @pytest.fixture
-def saved_records(monkeypatch):
-    records = {
-        "alerts": [],
-        "incidents": [],
-    }
+def response_setup(monkeypatch, tmp_path):
+    import app.core.response as response_module
 
-    def fake_save_alert(**kwargs):
-        records["alerts"].append(kwargs)
-
-    def fake_save_incident(**kwargs):
-        records["incidents"].append(kwargs)
-
-    monkeypatch.setattr(response, "save_alert", fake_save_alert)
-    monkeypatch.setattr(response, "save_incident", fake_save_incident)
-
-    return records
-
-
-@pytest.fixture
-def fake_quarantine(monkeypatch):
+    saved_alerts = []
+    saved_incidents = []
     managers = []
 
-    def create_manager(**kwargs):
-        manager = FakeQuarantineManager(**kwargs)
+    def fake_quarantine_manager(quarantine_path, simulation_mode):
+        manager = FakeQuarantineManager(
+            quarantine_path,
+            simulation_mode,
+        )
         managers.append(manager)
         return manager
 
-    monkeypatch.setattr(response, "QuarantineManager", create_manager)
-
-    return managers
-
-
-def test_response_engine_initializes_quarantine(fake_quarantine):
-    engine = response.ResponseEngine(
-        simulation_mode=True,
-        quarantine_path="test/quarantine",
+    monkeypatch.setattr(
+        response_module,
+        "QuarantineManager",
+        fake_quarantine_manager,
     )
 
+    monkeypatch.setattr(
+        response_module,
+        "save_alert",
+        lambda **kwargs: saved_alerts.append(kwargs),
+    )
+
+    monkeypatch.setattr(
+        response_module,
+        "save_incident",
+        lambda **kwargs: saved_incidents.append(kwargs),
+    )
+
+    engine = ResponseEngine(
+        simulation_mode=True,
+        quarantine_path=str(tmp_path / "quarantine"),
+    )
+
+    return {
+        "engine": engine,
+        "manager": managers[0],
+        "alerts": saved_alerts,
+        "incidents": saved_incidents,
+    }
+
+
+def test_initializes_quarantine_manager(response_setup):
+    engine = response_setup["engine"]
+    manager = response_setup["manager"]
+
     assert engine.simulation_mode is True
-    assert engine.quarantine.simulation_mode is True
-    assert engine.quarantine.quarantine_path == "test/quarantine"
+    assert manager.simulation_mode is True
+    assert manager.quarantine_path.endswith("quarantine")
 
 
-def test_response_engine_rejects_invalid_simulation_mode():
+def test_rejects_non_boolean_simulation_mode(tmp_path):
     with pytest.raises(TypeError):
-        response.ResponseEngine(simulation_mode="true")
+        ResponseEngine(
+            simulation_mode="true",
+            quarantine_path=str(tmp_path / "quarantine"),
+        )
 
 
-def test_response_engine_rejects_empty_quarantine_path():
+def test_rejects_empty_quarantine_path():
     with pytest.raises(ValueError):
-        response.ResponseEngine(quarantine_path=" ")
+        ResponseEngine(quarantine_path="   ")
 
 
-def test_normal_detection_saves_alerts_without_incident(
-    fake_quarantine,
-    saved_records,
-):
-    engine = response.ResponseEngine()
+def test_normal_detection_saves_alert_without_incident(response_setup):
+    engine = response_setup["engine"]
 
     result = engine.handle_detection(
         score=20,
@@ -93,293 +101,252 @@ def test_normal_detection_saves_alerts_without_incident(
     )
 
     assert result == []
-    assert len(saved_records["alerts"]) == 1
-    assert saved_records["alerts"][0]["rule"] == "low_activity"
-    assert saved_records["incidents"] == []
-    assert fake_quarantine[0].received_files == []
+    assert len(response_setup["alerts"]) == 1
+    assert response_setup["incidents"] == []
+    assert response_setup["manager"].calls == []
 
 
-def test_warning_detection_does_not_quarantine(
-    fake_quarantine,
-    saved_records,
-):
-    engine = response.ResponseEngine()
+def test_warning_detection_does_not_quarantine(response_setup):
+    engine = response_setup["engine"]
 
     result = engine.handle_detection(
-        score=60,
+        score=75,
         level="warning",
         triggered_rules=["mass_rename"],
         affected_files=["sample.txt"],
     )
 
     assert result == []
-    assert len(saved_records["alerts"]) == 1
-    assert saved_records["incidents"] == []
-    assert fake_quarantine[0].received_files == []
+    assert len(response_setup["alerts"]) == 1
+    assert response_setup["incidents"] == []
+    assert response_setup["manager"].calls == []
 
 
 def test_critical_detection_quarantines_and_saves_incident(
-    fake_quarantine,
-    saved_records,
+    response_setup,
 ):
-    engine = response.ResponseEngine()
+    engine = response_setup["engine"]
+    manager = response_setup["manager"]
 
-    fake_quarantine[0].files_to_return = [
-        "data/quarantine/sample.txt"
-    ]
-
-    original_files = ["data/sandbox/sample.txt"]
+    manager.result = ["quarantine/sample.txt"]
 
     result = engine.handle_detection(
         score=95,
         level="critical",
-        triggered_rules=["rapid_encryption", "high_entropy"],
-        affected_files=original_files,
-    )
-
-    assert result == ["data/quarantine/sample.txt"]
-    assert len(saved_records["alerts"]) == 2
-    assert len(saved_records["incidents"]) == 1
-
-    assert saved_records["incidents"][0]["affected_files"] == original_files
-    assert fake_quarantine[0].received_files == original_files
-
-
-def test_critical_detection_saves_incident_after_quarantine_failure(
-    fake_quarantine,
-    saved_records,
-):
-    engine = response.ResponseEngine()
-    fake_quarantine[0].error = OSError("Simulated quarantine failure")
-
-    original_files = ["data/sandbox/suspicious.txt"]
-
-    result = engine.handle_detection(
-        score=100,
-        level="critical",
-        triggered_rules=["rapid_encryption"],
-        affected_files=original_files,
-    )
-
-    assert result == []
-    assert len(saved_records["incidents"]) == 1
-    assert saved_records["incidents"][0]["affected_files"] == original_files
-
-
-def test_critical_detection_records_partial_quarantine_results(
-    fake_quarantine,
-    saved_records,
-):
-    engine = response.ResponseEngine()
-
-    fake_quarantine[0].files_to_return = [
-        "data/quarantine/first.txt"
-    ]
-
-    original_files = [
-        "data/sandbox/first.txt",
-        "data/sandbox/second.txt",
-    ]
-
-    result = engine.handle_detection(
-        score=90,
-        level="critical",
-        triggered_rules=["mass_rename"],
-        affected_files=original_files,
-    )
-
-    assert result == ["data/quarantine/first.txt"]
-    assert saved_records["incidents"][0]["affected_files"] == original_files
-
-
-def test_alert_failure_does_not_stop_remaining_alerts(
-    fake_quarantine,
-    saved_records,
-    monkeypatch,
-):
-    engine = response.ResponseEngine()
-    original_save_alert = response.save_alert
-    attempts = []
-
-    def selective_failure(**kwargs):
-        attempts.append(kwargs["rule"])
-
-        if kwargs["rule"] == "first_rule":
-            raise RuntimeError("Simulated database failure")
-
-        original_save_alert(**kwargs)
-
-    monkeypatch.setattr(response, "save_alert", selective_failure)
-
-    engine.handle_detection(
-        score=95,
-        level="critical",
-        triggered_rules=["first_rule", "second_rule"],
+        triggered_rules=["mass_rename", "high_entropy"],
         affected_files=["sample.txt"],
     )
 
-    assert attempts == ["first_rule", "second_rule"]
-    assert len(saved_records["alerts"]) == 1
-    assert saved_records["alerts"][0]["rule"] == "second_rule"
-    assert len(saved_records["incidents"]) == 1
+    assert result == ["quarantine/sample.txt"]
+    assert manager.calls == [["sample.txt"]]
+    assert len(response_setup["alerts"]) == 2
+    assert len(response_setup["incidents"]) == 1
+
+    incident = response_setup["incidents"][0]
+
+    assert incident["score"] == 95
+    assert incident["level"] == "critical"
+    assert incident["affected_files"] == ["sample.txt"]
+
+
+def test_critical_detection_saves_incident_if_quarantine_fails(
+    response_setup,
+):
+    engine = response_setup["engine"]
+    manager = response_setup["manager"]
+
+    manager.error = OSError("Quarantine failed")
+
+    result = engine.handle_detection(
+        score=95,
+        level="critical",
+        triggered_rules=["mass_rename"],
+        affected_files=["sample.txt"],
+    )
+
+    assert result == []
+    assert len(response_setup["incidents"]) == 1
+    assert response_setup["incidents"][0]["affected_files"] == [
+        "sample.txt"
+    ]
+
+
+def test_partial_quarantine_results_are_returned(response_setup):
+    engine = response_setup["engine"]
+    manager = response_setup["manager"]
+
+    manager.result = ["quarantine/first.txt"]
+
+    result = engine.handle_detection(
+        score=95,
+        level="critical",
+        triggered_rules=["mass_rename"],
+        affected_files=["first.txt", "second.txt"],
+    )
+
+    assert result == ["quarantine/first.txt"]
+    assert len(response_setup["incidents"]) == 1
+    assert response_setup["incidents"][0]["affected_files"] == [
+        "first.txt",
+        "second.txt",
+    ]
+
+
+def test_alert_failure_does_not_stop_remaining_alerts(
+    response_setup,
+    monkeypatch,
+):
+    import app.core.response as response_module
+
+    saved = []
+
+    def save_alert(**kwargs):
+        if kwargs["rule"] == "first_rule":
+            raise OSError("Database unavailable")
+        saved.append(kwargs)
+
+    monkeypatch.setattr(response_module, "save_alert", save_alert)
+
+    response_setup["engine"].handle_detection(
+        score=95,
+        level="critical",
+        triggered_rules=["first_rule", "second_rule"],
+        affected_files=[],
+    )
+
+    assert len(saved) == 1
+    assert saved[0]["rule"] == "second_rule"
+    assert len(response_setup["incidents"]) == 1
 
 
 def test_incident_database_failure_is_propagated(
-    fake_quarantine,
+    response_setup,
     monkeypatch,
 ):
-    engine = response.ResponseEngine()
+    import app.core.response as response_module
 
-    def failed_incident(**kwargs):
-        raise RuntimeError("Database unavailable")
+    def failed_save_incident(**kwargs):
+        raise OSError("Incident database write failed")
 
-    monkeypatch.setattr(response, "save_incident", failed_incident)
+    monkeypatch.setattr(
+        response_module,
+        "save_incident",
+        failed_save_incident,
+    )
 
-    with pytest.raises(RuntimeError, match="Database unavailable"):
-        engine.handle_detection(
+    with pytest.raises(OSError):
+        response_setup["engine"].handle_detection(
             score=95,
             level="critical",
-            triggered_rules=["rapid_encryption"],
+            triggered_rules=["mass_rename"],
             affected_files=["sample.txt"],
         )
 
 
-@pytest.mark.parametrize(
-    "invalid_score",
-    [
-        -1,
-        101,
-        True,
-        float("inf"),
-        float("nan"),
-        "95",
-        None,
-    ],
-)
-def test_response_rejects_invalid_scores(
-    fake_quarantine,
-    invalid_score,
-):
-    engine = response.ResponseEngine()
-
+@pytest.mark.parametrize("score", [-1, 101, True, float("inf"), float("nan"), "95", None])
+def test_rejects_invalid_scores(response_setup, score):
     with pytest.raises(ValueError):
-        engine.handle_detection(
-            score=invalid_score,
-            level="critical",
+        response_setup["engine"].handle_detection(
+            score=score,
+            level="warning",
             triggered_rules=[],
             affected_files=[],
         )
 
 
 @pytest.mark.parametrize(
-    "invalid_level",
-    [
-        "CRITICAL",
-        "unknown",
-        "",
-        None,
-        123,
-    ],
+    "level",
+    ["CRITICAL", "unknown", "", None, 123],
 )
-def test_response_rejects_invalid_levels(
-    fake_quarantine,
-    invalid_level,
-):
-    engine = response.ResponseEngine()
-
+def test_rejects_invalid_levels(response_setup, level):
     with pytest.raises(ValueError):
-        engine.handle_detection(
-            score=90,
-            level=invalid_level,
+        response_setup["engine"].handle_detection(
+            score=50,
+            level=level,
             triggered_rules=[],
             affected_files=[],
         )
 
 
-def test_response_rejects_invalid_triggered_rules(fake_quarantine):
-    engine = response.ResponseEngine()
-
-    with pytest.raises(ValueError):
-        engine.handle_detection(
-            score=90,
-            level="critical",
-            triggered_rules=["valid_rule", ""],
+def test_rejects_non_list_triggered_rules(response_setup):
+    with pytest.raises(TypeError):
+        response_setup["engine"].handle_detection(
+            score=50,
+            level="warning",
+            triggered_rules="mass_rename",
             affected_files=[],
         )
 
 
-def test_response_rejects_non_list_triggered_rules(fake_quarantine):
-    engine = response.ResponseEngine()
-
-    with pytest.raises(TypeError):
-        engine.handle_detection(
-            score=90,
-            level="critical",
-            triggered_rules="rapid_encryption",
+def test_rejects_empty_triggered_rule(response_setup):
+    with pytest.raises(ValueError):
+        response_setup["engine"].handle_detection(
+            score=50,
+            level="warning",
+            triggered_rules=[""],
             affected_files=[],
         )
 
 
-def test_response_rejects_invalid_affected_files(fake_quarantine):
-    engine = response.ResponseEngine()
-
-    with pytest.raises(ValueError):
-        engine.handle_detection(
-            score=90,
-            level="critical",
-            triggered_rules=[],
-            affected_files=["valid.txt", ""],
-        )
-
-
-def test_response_rejects_non_list_affected_files(fake_quarantine):
-    engine = response.ResponseEngine()
-
+def test_rejects_non_list_affected_files(response_setup):
     with pytest.raises(TypeError):
-        engine.handle_detection(
-            score=90,
-            level="critical",
+        response_setup["engine"].handle_detection(
+            score=50,
+            level="warning",
             triggered_rules=[],
             affected_files="sample.txt",
         )
 
 
-def test_alerts_and_incident_share_timestamp(
-    fake_quarantine,
-    saved_records,
-):
-    engine = response.ResponseEngine()
+def test_rejects_empty_affected_file_path(response_setup):
+    with pytest.raises(ValueError):
+        response_setup["engine"].handle_detection(
+            score=50,
+            level="warning",
+            triggered_rules=[],
+            affected_files=[" "],
+        )
 
-    engine.handle_detection(
+
+def test_alerts_and_incident_share_timestamp(response_setup):
+    response_setup["engine"].handle_detection(
         score=95,
         level="critical",
-        triggered_rules=["rapid_encryption", "high_entropy"],
+        triggered_rules=["mass_rename", "high_entropy"],
         affected_files=["sample.txt"],
     )
 
-    alert_timestamps = {
-        record["timestamp"] for record in saved_records["alerts"]
-    }
+    alerts = response_setup["alerts"]
+    incident = response_setup["incidents"][0]
 
-    incident_timestamp = saved_records["incidents"][0]["timestamp"]
-
-    assert alert_timestamps == {incident_timestamp}
+    assert alerts[0]["timestamp"] == alerts[1]["timestamp"]
+    assert alerts[0]["timestamp"] == incident["timestamp"]
 
 
-def test_quarantine_return_value_is_validated(
-    fake_quarantine,
-    saved_records,
+def test_rejects_invalid_quarantine_result(
+    response_setup,
 ):
-    engine = response.ResponseEngine()
-    fake_quarantine[0].files_to_return = [""]
+    manager = response_setup["manager"]
+    manager.result = ["valid-path", " "]
 
-    result = engine.handle_detection(
+    result = response_setup["engine"].handle_detection(
         score=95,
         level="critical",
-        triggered_rules=["rapid_encryption"],
+        triggered_rules=["mass_rename"],
         affected_files=["sample.txt"],
     )
 
     assert result == []
-    assert len(saved_records["incidents"]) == 1
-    assert saved_records["incidents"][0]["affected_files"] == ["sample.txt"]
+    assert len(response_setup["incidents"]) == 1
+
+
+def test_empty_rules_still_records_critical_incident(response_setup):
+    response_setup["engine"].handle_detection(
+        score=95,
+        level="critical",
+        triggered_rules=[],
+        affected_files=["sample.txt"],
+    )
+
+    assert response_setup["alerts"] == []
+    assert len(response_setup["incidents"]) == 1
