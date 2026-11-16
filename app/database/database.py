@@ -24,6 +24,17 @@ def _get_engine(database_url: str):
     )
 
 
+@lru_cache(maxsize=4)
+def _get_session_factory(database_url: str):
+    """Return a cached session factory for the database URL."""
+    return sessionmaker(
+        bind=_get_engine(database_url),
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False,
+    )
+
+
 def get_engine():
     """Get the shared database engine."""
     DATABASE_PATH.parent.mkdir(
@@ -35,28 +46,23 @@ def get_engine():
 
 
 def create_database() -> None:
-    """Create the RDRS SQLite database and its tables."""
+    """Create the RDRS database and all registered tables."""
     DATABASE_PATH.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    from app.database.models import (
-        Alert,
-        FileEventRecord,
-        Incident,
-        ProcessRecord,
-    )
+    # Import models so SQLAlchemy registers their table definitions.
+    from app.database import models  # noqa: F401
 
-    Base.metadata.create_all(get_engine())
+    Base.metadata.create_all(bind=get_engine())
 
 
 def get_session():
-    """Create a session using the shared database engine."""
-    SessionLocal = sessionmaker(
-        bind=get_engine(),
-        autoflush=False,
-        autocommit=False,
+    """Create a session using the shared session factory."""
+    DATABASE_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    return SessionLocal()
+    return _get_session_factory(DATABASE_URL)()
