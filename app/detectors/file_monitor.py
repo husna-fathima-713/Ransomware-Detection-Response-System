@@ -112,15 +112,18 @@ class RDRSEventHandler(FileSystemEventHandler):
 
         statistics = self.stats.calculate()
 
-        affected_files = [
-            recent_event.path
-            for recent_event in self.history.get_events()
-            if recent_event.event_type in {
-                "create",
-                "modify",
-                "rename",
-            }
-        ]
+        # Preserve event history while passing each affected path only once.
+        affected_files = list(
+            dict.fromkeys(
+                recent_event.path
+                for recent_event in self.history.get_events()
+                if recent_event.event_type in {
+                    "create",
+                    "modify",
+                    "rename",
+                }
+            )
+        )
 
         detection = self.detector.detect(
             affected_files=affected_files,
