@@ -327,3 +327,61 @@ def test_response_failure_does_not_stop_future_events(
     assert len(recorded_events) == 2
     assert calls == 2
     assert "Failed to process filesystem event" in caplog.text
+
+def test_warning_detection_does_not_quarantine(
+    monkeypatch,
+    tmp_path,
+):
+    saved_alerts = []
+    saved_incidents = []
+
+    monkeypatch.setattr(
+        response_module,
+        "save_alert",
+        lambda *args, **kwargs: saved_alerts.append(
+            (args, kwargs)
+        ),
+    )
+
+    monkeypatch.setattr(
+        response_module,
+        "save_incident",
+        lambda *args, **kwargs: saved_incidents.append(
+            (args, kwargs)
+        ),
+    )
+
+    handler, recorded_events = create_handler(
+        monkeypatch,
+        tmp_path,
+        weights={"mass_rename": 30},
+    )
+
+    original = tmp_path / "warning.txt"
+    renamed = tmp_path / "warning.locked"
+
+    original.write_text("Harmless warning-level test data")
+    original.rename(renamed)
+
+    handler.on_moved(
+        SimpleNamespace(
+            is_directory=False,
+            src_path=str(original),
+            dest_path=str(renamed),
+        )
+    )
+
+    detection = handler.detector.detect(
+        affected_files=[str(renamed)]
+    )
+    scored = handler.scorer.score_detection(detection)
+
+    assert scored["detected"] is True
+    assert scored["score"] == 30
+    assert scored["level"] == "warning"
+
+    assert len(saved_alerts) == 2
+    assert saved_incidents == []
+
+    assert renamed.exists()
+    assert not (tmp_path / "quarantine").exists()
