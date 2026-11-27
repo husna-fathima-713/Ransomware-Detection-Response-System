@@ -521,7 +521,15 @@ def test_detection_rules_match_triggered_signals(monkeypatch):
     )
 
     add_events(history, "modify", 20)
-    add_events(history, "rename", 10)
+
+    for index in range(10):
+        history.add(
+            FileEvent.create(
+                "rename",
+                f"file_{index}.locked",
+                old_extension=".txt",
+            )
+        )
 
     result = detector.detect()
 
